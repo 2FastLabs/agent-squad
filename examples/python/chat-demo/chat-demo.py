@@ -1,7 +1,10 @@
-import uuid
+import ast
 import asyncio
-import streamlit as st
+import operator
+import uuid
+
 import boto3
+import streamlit as st
 from agent_squad.orchestrator import AgentSquad, AgentSquadConfig
 from agent_squad.agents import (
     AgentResponse,
@@ -59,17 +62,50 @@ weather_tool = AgentTool(
 # Define math tool
 def calculate(expression: str) -> str:
     """
-    Safely evaluate a mathematical expression.
+    Safely evaluate a mathematical expression using AST.
 
     :param expression: The mathematical expression to evaluate
     """
+    operators = {
+        ast.Add: operator.add,
+        ast.Sub: operator.sub,
+        ast.Mult: operator.mul,
+        ast.Div: operator.truediv,
+        ast.USub: operator.neg,
+        ast.UAdd: operator.pos,
+    }
+
+    def safe_eval(node):
+        if isinstance(node, ast.Constant):
+            if isinstance(node.value, (int, float)):
+                return node.value
+            raise ValueError(f"Unsupported constant type: {type(node.value)}")
+        elif isinstance(node, ast.BinOp):
+            left = safe_eval(node.left)
+            right = safe_eval(node.right)
+            op = operators.get(type(node.op))
+            if op is None:
+                raise ValueError(f"Unsupported operator: {type(node.op).__name__}")
+            return op(left, right)
+        elif isinstance(node, ast.UnaryOp):
+            operand = safe_eval(node.operand)
+            op = operators.get(type(node.op))
+            if op is None:
+                raise ValueError(f"Unsupported operator: {type(node.op).__name__}")
+            return op(operand)
+        elif isinstance(node, ast.Expression):
+            return safe_eval(node.body)
+        else:
+            raise ValueError(f"Unsupported expression type: {type(node).__name__}")
+
     try:
-        # Only allow safe mathematical operations
-        allowed_chars = set('0123456789+-*/.() ')
-        if not all(c in allowed_chars for c in expression):
-            return "Error: Invalid characters in expression. Only numbers and basic operators (+, -, *, /, .) are allowed."
-        result = eval(expression)
+        tree = ast.parse(expression, mode='eval')
+        result = safe_eval(tree)
         return str(result)
+    except (SyntaxError, ValueError) as e:
+        return f"Error: {str(e)}"
+    except ZeroDivisionError:
+        return "Error: Division by zero"
     except Exception as e:
         return f"Error evaluating expression: {str(e)}"
 

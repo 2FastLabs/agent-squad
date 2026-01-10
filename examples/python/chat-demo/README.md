@@ -2,8 +2,6 @@
 
 A Streamlit-based chat interface demonstrating the Agent Squad's intelligent routing capabilities with multiple specialized agents.
 
-![Chat Demo](../img/chat-demo-screenshot.png)
-
 ## Overview
 
 This demo showcases the core functionality of the Agent Squad framework - automatically routing user queries to the most appropriate specialized agent based on the content of the message.
