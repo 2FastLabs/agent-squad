@@ -141,7 +141,7 @@ def create_orchestrator():
 
     # Set up the classifier
     orchestrator.set_classifier(BedrockClassifier(BedrockClassifierOptions(
-        model_id='anthropic.claude-3-haiku-20240307-v1:0'
+        model_id='anthropic.claude-haiku-4-5-20251001-v1:0'
     )))
 
     # Tech Agent - for technology and software questions
@@ -150,7 +150,7 @@ def create_orchestrator():
         description="Specializes in technology topics including software development, "
                     "programming, AI, cloud computing, cybersecurity, and technical concepts.",
         streaming=True,
-        model_id='anthropic.claude-3-haiku-20240307-v1:0',
+        model_id='anthropic.claude-haiku-4-5-20251001-v1:0',
     ))
     tech_agent.set_system_prompt("""You are a knowledgeable tech expert. Provide clear,
 accurate information about technology topics. Use code examples when helpful.
@@ -162,7 +162,7 @@ Format responses with markdown for better readability.""")
         description="Focuses on health topics including general wellness, nutrition, "
                     "fitness, mental health, and medical terminology. Does not provide medical diagnoses.",
         streaming=True,
-        model_id='anthropic.claude-3-haiku-20240307-v1:0',
+        model_id='anthropic.claude-haiku-4-5-20251001-v1:0',
     ))
     health_agent.set_system_prompt("""You are a helpful health information assistant.
 Provide general health and wellness information. Always recommend consulting healthcare
@@ -173,7 +173,7 @@ professionals for medical advice. Format responses clearly with markdown.""")
         name="Weather Agent",
         description="Provides current weather information for cities around the world.",
         streaming=True,
-        model_id='anthropic.claude-3-haiku-20240307-v1:0',
+        model_id='anthropic.claude-haiku-4-5-20251001-v1:0',
         tool_config={
             'tool': AgentTools(tools=[weather_tool]),
             'toolMaxRecursions': 5,
@@ -187,7 +187,7 @@ tool to fetch current weather data and present it in a friendly, readable format
         name="Math Agent",
         description="Handles mathematical questions, calculations, and explains math concepts.",
         streaming=True,
-        model_id='anthropic.claude-3-haiku-20240307-v1:0',
+        model_id='anthropic.claude-haiku-4-5-20251001-v1:0',
         tool_config={
             'tool': AgentTools(tools=[math_tool]),
             'toolMaxRecursions': 5,
