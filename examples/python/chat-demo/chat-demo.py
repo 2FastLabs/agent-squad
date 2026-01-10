@@ -129,20 +129,20 @@ def create_orchestrator():
     """Create and configure the AgentSquad orchestrator with specialized agents."""
 
     # Initialize the orchestrator with Bedrock classifier
-    orchestrator = AgentSquad(options=AgentSquadConfig(
-        LOG_AGENT_CHAT=True,
-        LOG_CLASSIFIER_CHAT=True,
-        LOG_CLASSIFIER_RAW_OUTPUT=True,
-        LOG_CLASSIFIER_OUTPUT=True,
-        LOG_EXECUTION_TIMES=True,
-        MAX_RETRIES=3,
-        MAX_MESSAGE_PAIRS_PER_AGENT=10,
-    ))
-
-    # Set up the classifier
-    orchestrator.set_classifier(BedrockClassifier(BedrockClassifierOptions(
-        model_id='anthropic.claude-haiku-4-5-20251001-v1:0'
-    )))
+    orchestrator = AgentSquad(
+        options=AgentSquadConfig(
+            LOG_AGENT_CHAT=True,
+            LOG_CLASSIFIER_CHAT=True,
+            LOG_CLASSIFIER_RAW_OUTPUT=True,
+            LOG_CLASSIFIER_OUTPUT=True,
+            LOG_EXECUTION_TIMES=True,
+            MAX_RETRIES=3,
+            MAX_MESSAGE_PAIRS_PER_AGENT=10,
+        ),
+        classifier=BedrockClassifier(BedrockClassifierOptions(
+            model_id='anthropic.claude-haiku-4-5-20251001-v1:0'
+        ))
+    )
 
     # Tech Agent - for technology and software questions
     tech_agent = BedrockLLMAgent(BedrockLLMAgentOptions(
