@@ -102,6 +102,7 @@ class BedrockLLMAgent(Agent):
         self.system_prompt: str = ""
         self.custom_variables: TemplateVariables = {}
         self.default_max_recursions: int = 20
+        self.tool_conversation: list[ConversationMessage] = []
 
         if options.custom_system_prompt:
             self.set_system_prompt(
@@ -197,6 +198,7 @@ class BedrockLLMAgent(Agent):
         continue_with_tools = True
         llm_response = None
         accumulated_thinking = None
+        self.tool_conversation = []
 
         while continue_with_tools and max_recursions > 0:
             llm_response = await self.handle_single_response(command, agent_tracking_info)
@@ -210,13 +212,28 @@ class BedrockLLMAgent(Agent):
             conversation.append(llm_response)
 
             if any("toolUse" in content for content in llm_response.content):
+                self.tool_conversation.append(llm_response)
                 tool_response = await self._process_tool_block(llm_response, conversation, agent_tracking_info)
                 conversation.append(tool_response)
+                self.tool_conversation.append(tool_response)
                 command["messages"] = conversation_to_dict(conversation)
             else:
                 continue_with_tools = False
 
             max_recursions -= 1
+
+        # If max_recursions exhausted while tools are still in use,
+        # return a clean response without toolUse blocks to prevent
+        # saving an orphaned toolUse that would break subsequent requests.
+        if llm_response and any("toolUse" in content for content in llm_response.content):
+            cleaned_content = [c for c in llm_response.content if "toolUse" not in c]
+            if not cleaned_content:
+                cleaned_content = [{"text": "I was unable to complete the request within the allowed number of tool use attempts. Please try again or rephrase your request."}]
+            llm_response = ConversationMessage(
+                role=ParticipantRole.ASSISTANT.value,
+                content=cleaned_content,
+            )
+            conversation.append(llm_response)
 
         # Add final_thinking to agent tracking info for callbacks
         if accumulated_thinking:
@@ -237,6 +254,7 @@ class BedrockLLMAgent(Agent):
         continue_with_tools = True
         final_response = None
         accumulated_thinking = ""  # Track thinking across chunks
+        self.tool_conversation = []
 
         async def stream_generator():
             nonlocal continue_with_tools, final_response, max_recursions, accumulated_thinking
@@ -257,14 +275,29 @@ class BedrockLLMAgent(Agent):
                 conversation.append(final_response)
 
                 if any("toolUse" in content for content in final_response.content):
+                    self.tool_conversation.append(final_response)
                     tool_response = await self._process_tool_block(final_response, conversation, agent_tracking_info)
 
                     conversation.append(tool_response)
+                    self.tool_conversation.append(tool_response)
                     command["messages"] = conversation_to_dict(conversation)
                 else:
                     continue_with_tools = False
 
                 max_recursions -= 1
+
+            # If max_recursions exhausted while tools are still in use,
+            # yield a clean final response without toolUse blocks.
+            if final_response and any("toolUse" in content for content in final_response.content):
+                cleaned_content = [c for c in final_response.content if "toolUse" not in c]
+                if not cleaned_content:
+                    cleaned_content = [{"text": "I was unable to complete the request within the allowed number of tool use attempts. Please try again or rephrase your request."}]
+                final_response = ConversationMessage(
+                    role=ParticipantRole.ASSISTANT.value,
+                    content=cleaned_content,
+                )
+                conversation.append(final_response)
+                yield AgentStreamResponse(final_message=final_response)
 
             kwargs = {
                 "agent_name": self.name,
