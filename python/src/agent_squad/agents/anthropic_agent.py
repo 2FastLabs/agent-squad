@@ -28,7 +28,7 @@ class AnthropicAgentOptions(AgentOptions):
     """
     api_key: Optional[str] = None
     client: Optional[Any] = None
-    model_id: str = "claude-3-5-sonnet-20240620"
+    model_id: str = "claude-sonnet-4-20250514"
     streaming: Optional[bool] = False
     inference_config: Optional[dict[str, Any]] = None
     retriever: Optional[Retriever] = None
@@ -65,7 +65,7 @@ class AnthropicAgent(Agent):
 
         self.model_id = options.model_id
 
-        default_inference_config = {"maxTokens": 1000, "temperature": 0.1, "topP": 0.9, "stopSequences": []}
+        default_inference_config = {"maxTokens": 1000, "temperature": 0.1, "stopSequences": []}
 
         if options.inference_config:
             self.inference_config = {**default_inference_config, **options.inference_config}
@@ -164,10 +164,17 @@ class AnthropicAgent(Agent):
             "max_tokens": self.inference_config.get("maxTokens"),
             "messages": messages,
             "system": system_prompt,
-            "temperature": self.inference_config.get("temperature"),
-            "top_p": self.inference_config.get("topP"),
             "stop_sequences": self.inference_config.get("stopSequences"),
         }
+
+        # Anthropic models do not accept both temperature and top_p.
+        # Only include whichever values are explicitly configured.
+        temperature = self.inference_config.get("temperature")
+        top_p = self.inference_config.get("topP")
+        if temperature is not None:
+            json_input["temperature"] = temperature
+        if top_p is not None:
+            json_input["top_p"] = top_p
 
         # Add any additional model request fields
         if self.additional_model_request_fields:
