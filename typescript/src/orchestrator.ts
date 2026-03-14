@@ -434,6 +434,15 @@ export class AgentSquad {
           classifierResult?.selectedAgent.id,
           this.config.MAX_MESSAGE_PAIRS_PER_AGENT
         );
+
+        // Save tool_result messages from tool processing
+        const agent = classifierResult?.selectedAgent;
+        if (agent?.pendingToolResponses?.length) {
+          for (const toolMsg of agent.pendingToolResponses) {
+            await this.storage.saveChatMessage(userId, sessionId, agent.id, toolMsg, this.config.MAX_MESSAGE_PAIRS_PER_AGENT);
+          }
+          agent.pendingToolResponses = [];
+        }
       }
 
       return {
@@ -536,8 +545,17 @@ export class AgentSquad {
             this.storage,
             userId,
             sessionId,
-            agent.id
+            agent.id,
+            this.config.MAX_MESSAGE_PAIRS_PER_AGENT
           );
+
+          // Save tool_result messages from streaming tool processing
+          if (agent.pendingToolResponses?.length) {
+            for (const toolMsg of agent.pendingToolResponses) {
+              await this.storage.saveChatMessage(userId, sessionId, agent.id, toolMsg, this.config.MAX_MESSAGE_PAIRS_PER_AGENT);
+            }
+            agent.pendingToolResponses = [];
+          }
         }
       } else {
         this.logger.warn("No data accumulated, messages not saved");
