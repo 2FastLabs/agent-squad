@@ -264,7 +264,7 @@ export class AnthropicAgent extends Agent {
         message.role === ParticipantRole.USER
           ? ParticipantRole.USER
           : ParticipantRole.ASSISTANT,
-      content: message.content![0]["text"] || "", // Fallback to empty string if content is undefined
+      content: message.content?.[0]?.["text"] || "", // Fallback to empty string if content is undefined or empty
     }));
     messages.push({ role: ParticipantRole.USER, content: inputText });
 
