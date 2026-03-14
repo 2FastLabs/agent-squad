@@ -1,5 +1,5 @@
 import {
-  ANTHROPIC_MODEL_ID_CLAUDE_3_5_SONNET,
+  ANTHROPIC_MODEL_ID_CLAUDE_SONNET_4, ANTHROPIC_MODEL_ID_CLAUDE_3_5_SONNET,
   ConversationMessage,
   ParticipantRole,
 } from "../types";
@@ -80,13 +80,12 @@ export class AnthropicClassifier extends Classifier {
       throw new Error("Anthropic API key is required");
     }
     this.client = new Anthropic({ apiKey: options.apiKey });
-    this.modelId = options.modelId || ANTHROPIC_MODEL_ID_CLAUDE_3_5_SONNET;
+    this.modelId = options.modelId || ANTHROPIC_MODEL_ID_CLAUDE_SONNET_4;
     // Set default value for max_tokens if not provided
     const defaultMaxTokens = 1000; // You can adjust this default value as needed
     this.inferenceConfig = {
       maxTokens: options.inferenceConfig?.maxTokens ?? defaultMaxTokens,
       temperature: options.inferenceConfig?.temperature,
-      topP: options.inferenceConfig?.topP,
       stopSequences: options.inferenceConfig?.stopSequences,
     };
 
@@ -105,15 +104,19 @@ async processRequest(
     };
 
     try {
-      const response = await this.client.messages.create({
+      const callParams: any = {
         model: this.modelId,
         max_tokens: this.inferenceConfig.maxTokens,
         messages: [userMessage],
         system: this.systemPrompt,
         temperature: this.inferenceConfig.temperature,
-        top_p: this.inferenceConfig.topP,
         tools: this.tools
-      });
+      };
+      // Only pass top_p if explicitly set — newer Anthropic models reject both temperature and top_p
+      if (this.inferenceConfig.topP !== undefined) {
+        callParams.top_p = this.inferenceConfig.topP;
+      }
+      const response = await this.client.messages.create(callParams);
 
       const toolUse = response.content.find(
         (content): content is Anthropic.ToolUseBlock => content.type === "tool_use"
