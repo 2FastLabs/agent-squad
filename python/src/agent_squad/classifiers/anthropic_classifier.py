@@ -6,7 +6,7 @@ from agent_squad.utils.logger import Logger
 from agent_squad.types import ConversationMessage
 from agent_squad.classifiers import Classifier, ClassifierResult, ClassifierCallbacks
 
-ANTHROPIC_MODEL_ID_CLAUDE_3_5_SONNET = "claude-3-5-sonnet-20240620"
+ANTHROPIC_MODEL_ID_CLAUDE_SONNET_4 = "claude-sonnet-4-20250514"
 
 class AnthropicClassifierOptions:
     def __init__(self,
@@ -28,7 +28,7 @@ class AnthropicClassifier(Classifier):
             raise ValueError("Anthropic API key is required")
 
         self.client = Anthropic(api_key=options.api_key)
-        self.model_id = options.model_id or ANTHROPIC_MODEL_ID_CLAUDE_3_5_SONNET
+        self.model_id = options.model_id or ANTHROPIC_MODEL_ID_CLAUDE_SONNET_4
 
         self.callbacks = options.callbacks
 
@@ -36,9 +36,11 @@ class AnthropicClassifier(Classifier):
         self.inference_config = {
             'max_tokens': options.inference_config.get('max_tokens', default_max_tokens),
             'temperature': options.inference_config.get('temperature', 0.0),
-            'top_p': options.inference_config.get('top_p', 0.9),
             'stop_sequences': options.inference_config.get('stop_sequences', []),
         }
+        # Only pass top_p if explicitly set — newer Anthropic models reject both temperature and top_p
+        if 'top_p' in options.inference_config:
+            self.inference_config['top_p'] = options.inference_config['top_p']
 
         self.tools: List[dict] = [
             {
@@ -81,21 +83,26 @@ class AnthropicClassifier(Classifier):
                 "inferenceConfig": {
                     "maxTokens": self.inference_config['max_tokens'],
                     "temperature": self.inference_config['temperature'],
-                    "topP": self.inference_config['top_p'],
                     "stopSequences": self.inference_config['stop_sequences'],
                 },
             }
+            if 'top_p' in self.inference_config:
+                kwargs['inferenceConfig']['topP'] = self.inference_config['top_p']
+
             await self.callbacks.on_classifier_start('on_classifier_start', input_text, **kwargs)
 
-            response:Message = self.client.messages.create(
-                model=self.model_id,
-                max_tokens=self.inference_config['max_tokens'],
-                messages=[user_message],
-                system=self.system_prompt,
-                temperature=self.inference_config['temperature'],
-                top_p=self.inference_config['top_p'],
-                tools=self.tools
-            )
+            call_params = {
+                "model": self.model_id,
+                "max_tokens": self.inference_config['max_tokens'],
+                "messages": [user_message],
+                "system": self.system_prompt,
+                "temperature": self.inference_config['temperature'],
+                "tools": self.tools,
+            }
+            if 'top_p' in self.inference_config:
+                call_params['top_p'] = self.inference_config['top_p']
+
+            response:Message = self.client.messages.create(**call_params)
 
             tool_use = next((c for c in response.content if c.type == "tool_use"), None)
 
