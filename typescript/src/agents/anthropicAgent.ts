@@ -1,6 +1,6 @@
 import { Agent, AgentCallbacks, AgentOptions } from "./agent";
 import {
-  ANTHROPIC_MODEL_ID_CLAUDE_3_5_SONNET,
+  ANTHROPIC_MODEL_ID_CLAUDE_SONNET_4, ANTHROPIC_MODEL_ID_CLAUDE_3_5_SONNET,
   ConversationMessage,
   ParticipantRole,
   TemplateVariables,
@@ -112,17 +112,20 @@ export class AnthropicAgent extends Agent {
 
     this.streaming = options.streaming ?? false;
 
-    this.modelId = options.modelId || ANTHROPIC_MODEL_ID_CLAUDE_3_5_SONNET;
+    this.modelId = options.modelId || ANTHROPIC_MODEL_ID_CLAUDE_SONNET_4;
 
     this.thinking = options.thinking ?? null;
 
-    const defaultMaxTokens = 1000; // You can adjust this default value as needed
+    const defaultMaxTokens = 1000;
     this.inferenceConfig = {
       maxTokens: options.inferenceConfig?.maxTokens ?? defaultMaxTokens,
       temperature: options.inferenceConfig?.temperature ?? 0.1,
-      topP: options.inferenceConfig?.topP ?? 0.9,
       stopSequences: options.inferenceConfig?.stopSequences ?? [],
     };
+    // Only set topP if explicitly provided — newer Anthropic models reject both temperature and topP
+    if (options.inferenceConfig?.topP !== undefined) {
+      this.inferenceConfig.topP = options.inferenceConfig.topP;
+    }
 
     this.retriever = options.retriever;
 
@@ -294,13 +297,12 @@ export class AnthropicAgent extends Agent {
           this.toolConfig?.toolMaxRecursions || this.defaultMaxRecursions;
         do {
           // Call Anthropic
-          const llmInput = {
+          const llmInput: any = {
             model: this.modelId,
             max_tokens: this.inferenceConfig.maxTokens,
             messages: messages,
             system: systemPrompt,
             temperature: this.inferenceConfig.temperature,
-            top_p: this.inferenceConfig.topP,
             thinking: this.thinking,
             ...(this.toolConfig && {
               tools:
@@ -309,6 +311,10 @@ export class AnthropicAgent extends Agent {
                   : this.toolConfig.tool,
             }),
           };
+          // Only pass top_p if explicitly set — newer Anthropic models reject both temperature and top_p
+          if (this.inferenceConfig.topP !== undefined) {
+            llmInput.top_p = this.inferenceConfig.topP;
+          }
           const response = await this.handleSingleResponse(llmInput);
 
           const toolUseBlocks = response.content.filter<Anthropic.ToolUseBlock>(
@@ -325,7 +331,7 @@ export class AnthropicAgent extends Agent {
             const tools = this.toolConfig.tool;
             const toolHandler =
               this.toolConfig.useToolHandler ??
-              (async (response, conversationHistory) => {
+              (async (response, _conversationHistory) => {
                 if (this.isAgentTools(tools)) {
                   return tools.toolHandler(
                     response,
@@ -335,10 +341,9 @@ export class AnthropicAgent extends Agent {
                     this.getInputData.bind(this)
                   );
                 }
-                // Only use legacy handler when it's not AgentTools
-                return this.toolConfig.useToolHandler(
-                  response,
-                  conversationHistory
+                // Legacy Tool[] requires an explicit useToolHandler
+                throw new Error(
+                  "toolConfig.useToolHandler is required when using Tool[] instead of AgentTools"
                 );
               });
 
@@ -347,6 +352,7 @@ export class AnthropicAgent extends Agent {
 
             // Add the formatted response to messages
             messages.push(formattedResponse);
+            this.pendingToolResponses.push(formattedResponse);
             toolUse = true;
           } else {
             const textContent = response.content.find(
@@ -399,7 +405,7 @@ export class AnthropicAgent extends Agent {
     let recursions = this.toolConfig?.toolMaxRecursions || 5;
 
     do {
-      const stream = await this.client.messages.stream({
+      const streamConfig: any = {
         model: this.modelId,
         max_tokens: this.inferenceConfig.maxTokens,
         messages: messages,
@@ -409,13 +415,18 @@ export class AnthropicAgent extends Agent {
           type: this.thinking?.type === "enabled" ? "enabled" : "disabled",
           budget_tokens: this.thinking?.budget_tokens
         },
-        top_p: this.inferenceConfig.topP,
         ...(this.toolConfig && {
           tools:
             this.toolConfig.tool instanceof AgentTools
               ? this.formatTools(this.toolConfig.tool)
               : this.toolConfig.tool,
         }),
+      };
+      // Only pass top_p if explicitly set — newer Anthropic models reject both temperature and top_p
+      if (this.inferenceConfig.topP !== undefined) {
+        streamConfig.top_p = this.inferenceConfig.topP;
+      }
+      const stream = await this.client.messages.stream(streamConfig);
       });
 
       let toolBlock: Anthropic.ToolUseBlock = {
@@ -462,7 +473,7 @@ export class AnthropicAgent extends Agent {
               const tools = this.toolConfig.tool;
               const toolHandler =
                 this.toolConfig.useToolHandler ??
-                (async (response, conversationHistory) => {
+                (async (response, _conversationHistory) => {
                   if (this.isAgentTools(tools)) {
                     return tools.toolHandler(
                       response,
@@ -472,10 +483,9 @@ export class AnthropicAgent extends Agent {
                       this.getInputData.bind(this)
                     );
                   }
-                  // Only use legacy handler when it's not AgentTools
-                  return this.toolConfig.useToolHandler(
-                    response,
-                    conversationHistory
+                  // Legacy Tool[] requires an explicit useToolHandler
+                  throw new Error(
+                    "toolConfig.useToolHandler is required when using Tool[] instead of AgentTools"
                   );
                 });
 
@@ -484,6 +494,7 @@ export class AnthropicAgent extends Agent {
 
               // Add the formatted response to messages
               messages.push(formattedResponse);
+              this.pendingToolResponses.push(formattedResponse);
               toolUse = true;
             }
           } else {
