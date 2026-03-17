@@ -180,7 +180,13 @@ When communicating with other agents, including the User, please follow these gu
         async for chunk in response:
             if isinstance(chunk, AgentStreamResponse):
                 if chunk.final_message:
-                    final_response = chunk.final_message.content[0].get('text', '')
+                    msg = chunk.final_message
+                    if isinstance(msg, ConversationMessage) and msg.content:
+                        final_response = msg.content[0].get('text', '')
+                    elif isinstance(msg, dict):
+                        content = msg.get('content', [])
+                        if content and isinstance(content[0], dict):
+                            final_response = content[0].get('text', '')
         return final_response
 
 
@@ -215,8 +221,18 @@ When communicating with other agents, including the User, please follow these gu
             if agent.is_streaming_enabled():
                 final_response = asyncio.run(self.process_agent_streaming_response(response))
 
+            elif isinstance(response, ConversationMessage):
+                final_response = response.content[0].get('text', '') if response.content else ''
+            elif isinstance(response, dict):
+                resp_content = response.get('content', [])
+                if resp_content and isinstance(resp_content[0], dict):
+                    final_response = resp_content[0].get('text', '')
+                elif resp_content and isinstance(resp_content[0], str):
+                    final_response = resp_content[0]
+                else:
+                    final_response = str(response)
             else:
-                final_response = response.content[0].get('text', '')
+                final_response = str(response)
 
             assistant_message = TimestampedMessage(
                 role=ParticipantRole.ASSISTANT.value,
