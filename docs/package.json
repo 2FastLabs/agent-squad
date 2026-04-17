@@ -29,6 +29,7 @@
     "shiki": "^1.10.3"
   },
   "devDependencies": {
+    "glob": "^11.1.0",
     "rimraf": "^6.1.0"
   }
 }
