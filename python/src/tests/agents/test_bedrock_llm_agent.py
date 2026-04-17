@@ -832,3 +832,175 @@ def test_additional_model_request_fields(mock_boto3_client):
     # Verify topP is present when thinking is not enabled
     assert "topP" in result["inferenceConfig"]
     assert result["inferenceConfig"]["topP"] == 0.9  # Default value
+
+
+@pytest.mark.asyncio
+async def test_tool_conversation_collected_during_tool_use(bedrock_llm_agent, mock_boto3_client):
+    """Test that intermediate tool messages are collected in tool_conversation."""
+    tool_use_response = ConversationMessage(
+        role=ParticipantRole.USER.value,
+        content=[{"toolResult": {"toolUseId": "123", "content": [{"text": "Tool output"}]}}]
+    )
+
+    bedrock_llm_agent.tool_config = {
+        "tool": [
+            AgentTool(name='test_tool', func=lambda: None, description='Test tool')
+        ],
+        "toolMaxRecursions": 5,
+        "useToolHandler": AsyncMock(return_value=tool_use_response)
+    }
+
+    mock_responses = [
+        {
+            'output': {
+                'message': {
+                    'role': 'assistant',
+                    'content': [
+                        {'text': 'Let me check'},
+                        {'toolUse': {'toolUseId': '123', 'name': 'test_tool', 'input': {}}}
+                    ]
+                }
+            }
+        },
+        {
+            'output': {
+                'message': {
+                    'role': 'assistant',
+                    'content': [{'text': 'Here is the result'}]
+                }
+            }
+        }
+    ]
+    mock_boto3_client.return_value.converse.side_effect = mock_responses
+
+    result = await bedrock_llm_agent.process_request(
+        "Test question", "test_user", "test_session", []
+    )
+
+    # Verify the final response is clean (no toolUse)
+    assert isinstance(result, ConversationMessage)
+    assert result.content[0]['text'] == 'Here is the result'
+    assert not any("toolUse" in c for c in result.content)
+
+    # Verify tool_conversation collected intermediate messages
+    assert len(bedrock_llm_agent.tool_conversation) == 2
+    # First: assistant message with toolUse
+    assert any("toolUse" in c for c in bedrock_llm_agent.tool_conversation[0].content)
+    # Second: user message with toolResult
+    assert any("toolResult" in c for c in bedrock_llm_agent.tool_conversation[1].content)
+
+
+@pytest.mark.asyncio
+async def test_max_recursions_exhaustion_returns_clean_response(bedrock_llm_agent, mock_boto3_client):
+    """Test that when max_recursions is exhausted, the response has no toolUse blocks."""
+    tool_use_response = ConversationMessage(
+        role=ParticipantRole.USER.value,
+        content=[{"toolResult": {"toolUseId": "123", "content": [{"text": "Tool output"}]}}]
+    )
+
+    bedrock_llm_agent.tool_config = {
+        "tool": [
+            AgentTool(name='test_tool', func=lambda: None, description='Test tool')
+        ],
+        "toolMaxRecursions": 1,  # Only 1 recursion allowed
+        "useToolHandler": AsyncMock(return_value=tool_use_response)
+    }
+
+    # Model always returns toolUse - will exhaust max_recursions
+    mock_boto3_client.return_value.converse.return_value = {
+        'output': {
+            'message': {
+                'role': 'assistant',
+                'content': [
+                    {'text': 'Let me check'},
+                    {'toolUse': {'toolUseId': '123', 'name': 'test_tool', 'input': {}}}
+                ]
+            }
+        }
+    }
+
+    result = await bedrock_llm_agent.process_request(
+        "Test question", "test_user", "test_session", []
+    )
+
+    # Verify the response is clean - no toolUse blocks
+    assert isinstance(result, ConversationMessage)
+    assert not any("toolUse" in c for c in result.content)
+    # Should have text content (either original text or fallback message)
+    assert any("text" in c for c in result.content)
+
+
+@pytest.mark.asyncio
+async def test_tool_conversation_empty_when_no_tools(bedrock_llm_agent, mock_boto3_client):
+    """Test that tool_conversation is empty when no tools are used."""
+    mock_boto3_client.return_value.converse.return_value = {
+        'output': {
+            'message': {
+                'role': 'assistant',
+                'content': [{'text': 'Simple response'}]
+            }
+        }
+    }
+
+    result = await bedrock_llm_agent.process_request(
+        "Test question", "test_user", "test_session", []
+    )
+
+    assert isinstance(result, ConversationMessage)
+    assert result.content[0]['text'] == 'Simple response'
+    assert len(bedrock_llm_agent.tool_conversation) == 0
+
+
+@pytest.mark.asyncio
+async def test_streaming_tool_conversation_collected(bedrock_llm_agent, mock_boto3_client):
+    """Test that tool_conversation is collected during streaming with tool use."""
+    bedrock_llm_agent.streaming = True
+
+    async def mock_tool_handler(message, conversation):
+        return ConversationMessage(
+            role=ParticipantRole.USER.value,
+            content=[{"toolResult": {"toolUseId": "123", "content": [{"text": "Tool output"}]}}]
+        )
+
+    bedrock_llm_agent.tool_config = {
+        "tool": AgentTools(tools=[]),
+        "useToolHandler": mock_tool_handler
+    }
+
+    # First response with tool use
+    stream_response1 = {
+        "stream": [
+            {"messageStart": {"role": "assistant"}},
+            {"contentBlockStart": {"start": {"toolUse": {"toolUseId": "123", "name": "test_tool"}}}},
+            {"contentBlockDelta": {"delta": {"toolUse": {"input": "{\"param\":"}}}},
+            {"contentBlockDelta": {"delta": {"toolUse": {"input": "\"value\"}"}}}},
+            {"contentBlockStop": {}}
+        ]
+    }
+
+    # Second response after tool use (text only)
+    stream_response2 = {
+        "stream": [
+            {"messageStart": {"role": "assistant"}},
+            {"contentBlockDelta": {"delta": {"text": "Final response"}}},
+            {"contentBlockStop": {}}
+        ]
+    }
+
+    mock_boto3_client.return_value.converse_stream.side_effect = [stream_response1, stream_response2]
+
+    result = await bedrock_llm_agent.process_request(
+        "Test with tool", "test_user", "test_session", []
+    )
+
+    # Consume the stream
+    chunks = []
+    async for chunk in result:
+        chunks.append(chunk)
+
+    # Verify tool_conversation was populated during streaming
+    assert len(bedrock_llm_agent.tool_conversation) == 2
+    # First: assistant message with toolUse
+    assert any("toolUse" in c for c in bedrock_llm_agent.tool_conversation[0].content)
+    # Second: user message with toolResult
+    assert any("toolResult" in c for c in bedrock_llm_agent.tool_conversation[1].content)

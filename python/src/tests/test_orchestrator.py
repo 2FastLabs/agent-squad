@@ -146,7 +146,7 @@ async def test_dispatch_to_agent_success(orchestrator, mock_agent):
     )
     mock_agent.process_request.return_value = expected_response
 
-    response = await orchestrator.dispatch_to_agent({
+    response, agent = await orchestrator.dispatch_to_agent({
         "user_input": "test",
         "user_id": "user1",
         "session_id": "session1",
@@ -155,12 +155,13 @@ async def test_dispatch_to_agent_success(orchestrator, mock_agent):
     })
 
     assert response == expected_response
+    assert agent == mock_agent
 
 @pytest.mark.asyncio
 async def test_dispatch_to_agent_no_agent(orchestrator):
     classifier_result = ClassifierResult(selected_agent=None, confidence=0)
 
-    response = await orchestrator.dispatch_to_agent({
+    response, agent = await orchestrator.dispatch_to_agent({
         "user_input": "test",
         "user_id": "user1",
         "session_id": "session1",
@@ -170,6 +171,7 @@ async def test_dispatch_to_agent_no_agent(orchestrator):
 
     assert isinstance(response, ConversationMessage)
     assert "more information" in response.content[0].get('text')
+    assert agent is None
 
 # Test streaming functionality
 @pytest.mark.asyncio
@@ -335,6 +337,79 @@ def test_create_metadata_no_agent(orchestrator):
     assert metadata.agent_name == "No Agent"
     assert "error_type" in metadata.additional_params
     assert metadata.additional_params["error_type"] == "classification_failed"
+
+# Test intermediate tool messages are saved
+@pytest.mark.asyncio
+async def test_agent_process_request_saves_tool_conversation(orchestrator, mock_agent):
+    """Test that intermediate tool messages (toolUse/toolResult) are saved to storage."""
+    classifier_result = ClassifierResult(selected_agent=mock_agent, confidence=0.9)
+
+    # Set up tool_conversation on the mock agent
+    tool_use_msg = ConversationMessage(
+        role=ParticipantRole.ASSISTANT.value,
+        content=[{"toolUse": {"toolUseId": "123", "name": "test_tool", "input": {}}}]
+    )
+    tool_result_msg = ConversationMessage(
+        role=ParticipantRole.USER.value,
+        content=[{"toolResult": {"toolUseId": "123", "content": [{"text": "Tool output"}]}}]
+    )
+    mock_agent.tool_conversation = [tool_use_msg, tool_result_msg]
+
+    final_response = ConversationMessage(
+        role=ParticipantRole.ASSISTANT.value,
+        content=[{"text": "Final answer based on tool output"}]
+    )
+    mock_agent.process_request.return_value = final_response
+
+    response = await orchestrator.agent_process_request(
+        "test input", "user1", "session1", classifier_result
+    )
+
+    # Verify storage was called for:
+    # 1. User message
+    # 2. Tool use message (from tool_conversation)
+    # 3. Tool result message (from tool_conversation)
+    # 4. Final assistant response
+    assert orchestrator.storage.save_chat_message.call_count == 4
+
+    # Check the saved messages in order
+    calls = orchestrator.storage.save_chat_message.call_args_list
+    # First: user message
+    assert calls[0][0][3].role == ParticipantRole.USER.value
+    assert calls[0][0][3].content[0]['text'] == 'test input'
+    # Second: assistant toolUse
+    assert calls[1][0][3].role == ParticipantRole.ASSISTANT.value
+    assert "toolUse" in calls[1][0][3].content[0]
+    # Third: user toolResult
+    assert calls[2][0][3].role == ParticipantRole.USER.value
+    assert "toolResult" in calls[2][0][3].content[0]
+    # Fourth: final assistant response
+    assert calls[3][0][3].role == ParticipantRole.ASSISTANT.value
+    assert calls[3][0][3].content[0]['text'] == 'Final answer based on tool output'
+
+
+@pytest.mark.asyncio
+async def test_agent_process_request_no_tool_conversation(orchestrator, mock_agent):
+    """Test that when no tools are used, only user message and response are saved."""
+    classifier_result = ClassifierResult(selected_agent=mock_agent, confidence=0.9)
+
+    # No tool_conversation attribute
+    if hasattr(mock_agent, 'tool_conversation'):
+        delattr(mock_agent, 'tool_conversation')
+
+    final_response = ConversationMessage(
+        role=ParticipantRole.ASSISTANT.value,
+        content=[{"text": "Simple response"}]
+    )
+    mock_agent.process_request.return_value = final_response
+
+    response = await orchestrator.agent_process_request(
+        "test input", "user1", "session1", classifier_result
+    )
+
+    # Only user message + final response = 2 saves
+    assert orchestrator.storage.save_chat_message.call_count == 2
+
 
 # Test fallback functionality
 def test_get_fallback_result(orchestrator, mock_agent):
