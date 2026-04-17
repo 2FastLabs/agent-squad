@@ -391,6 +391,15 @@ export class BedrockLLMAgent extends Agent {
 
           converseCmd.messages = conversation;
         } while (continueWithTools && maxRecursions > 0);
+
+        // If maxRecursions exhausted during tool loop, finalMessage may be null or contain toolUse blocks
+        if (!finalMessage || finalMessage.content?.some((c: any) => 'toolUse' in c)) {
+          return {
+            role: ParticipantRole.ASSISTANT,
+            content: [{ text: "Maximum tool recursion limit reached without a final response." }]
+          } as ConversationMessage;
+        }
+
         return finalMessage;
       }
     } catch (error) {

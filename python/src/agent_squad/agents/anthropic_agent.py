@@ -234,14 +234,19 @@ class AnthropicAgent(Agent):
                     # Create content list with text from final_response
                     content_list = []
 
-                    # Add text content, filter out empty items
-                    for content in final_response.content:
-                        if hasattr(content, 'text') and content.text:
-                            content_list.append({"text": content.text})
+                    if final_response:
+                        # Add text content, filter out empty items
+                        for content in final_response.content:
+                            if hasattr(content, 'text') and content.text:
+                                content_list.append({"text": content.text})
 
                     # Add thinking to the content if it exists
                     if accumulated_thinking:
                         content_list.append({"thinking": accumulated_thinking})
+
+                    # Ensure content is never empty
+                    if not content_list:
+                        content_list.append({"text": "Maximum tool recursion limit reached without a final response."})
 
                     yield AgentStreamResponse(
                         final_message=ConversationMessage(
@@ -320,6 +325,9 @@ class AnthropicAgent(Agent):
                 llm_content = llm_response.content or [{"text": "No final response generated"}]
 
             max_recursions -= 1
+
+        if llm_content is None:
+            llm_content = [{"text": "Maximum tool recursion limit reached without a final response."}]
 
         return ConversationMessage(role=ParticipantRole.ASSISTANT.value, content=llm_content)
 
