@@ -389,7 +389,15 @@ pip install "agent-squad[openai]"
 
 Adds OpenAI's GPT models for agents and classification, along with core packages.
 
-**4. Full Installation**:
+**4. MiniMax Integration**:
+
+  ```bash
+pip install "agent-squad[minimax]"
+  ```
+
+Adds [MiniMax](https://www.minimaxi.com/) models (MiniMax-M2.7, MiniMax-M2.7-highspeed) for agents and classification via the OpenAI-compatible API.
+
+**5. Full Installation**:
 
   ```bash
 pip install "agent-squad[all]"
