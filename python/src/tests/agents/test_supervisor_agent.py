@@ -386,3 +386,203 @@ async def test_supervisor_agent_memory_management(mock_boto3_client):
 
     response = await agent.process_request(input_text, user_id, session_id, [])
     history = await agent.storage.fetch_all_chats(user_id, session_id)
+
+
+# --- Mock agents for dict response bug fix tests ---
+
+class MockDictResponseAgent(BedrockLLMAgent):
+    """Returns dict instead of ConversationMessage (the bug scenario)."""
+    async def process_request(self, *args, **kwargs):
+        return {"role": "assistant", "content": [{"text": "Dict mock response"}]}
+
+
+class MockDictStringContentAgent(BedrockLLMAgent):
+    """Returns dict with string content items."""
+    async def process_request(self, *args, **kwargs):
+        return {"role": "assistant", "content": ["plain text response"]}
+
+
+class MockStreamingDictAgent(BedrockLLMAgent):
+    """Returns streaming response with dict final_message."""
+    def is_streaming_enabled(self):
+        return True
+
+    async def process_request(self, *args, **kwargs):
+        from agent_squad.agents import AgentStreamResponse
+        async def _stream():
+            yield AgentStreamResponse(text="chunk")
+            yield AgentStreamResponse(final_message={
+                "role": "assistant",
+                "content": [{"text": "Streamed dict response"}]
+            })
+        return _stream()
+
+
+class MockStreamingConversationAgent(BedrockLLMAgent):
+    """Returns streaming response with ConversationMessage final_message."""
+    def is_streaming_enabled(self):
+        return True
+
+    async def process_request(self, *args, **kwargs):
+        from agent_squad.agents import AgentStreamResponse
+        async def _stream():
+            yield AgentStreamResponse(text="chunk")
+            yield AgentStreamResponse(final_message=ConversationMessage(
+                role=ParticipantRole.ASSISTANT.value,
+                content=[{"text": "Streamed CM response"}]
+            ))
+        return _stream()
+
+
+# --- Tests for dict response handling (the bug fix) ---
+
+def test_send_message_dict_response(mock_boto3_client):
+    """Agent returns dict instead of ConversationMessage — no AttributeError."""
+    lead_agent = MockBedrockLLMAgent(BedrockLLMAgentOptions(
+        name="Supervisor", description="Test lead_agent"
+    ))
+    dict_agent = MockDictResponseAgent(BedrockLLMAgentOptions(
+        name="DictAgent", description="Returns dict"
+    ))
+    supervisor = SupervisorAgent(SupervisorAgentOptions(
+        name="SupervisorAgent",
+        description="Test supervisor",
+        lead_agent=lead_agent,
+        team=[dict_agent],
+        storage=mock_storage(),
+        trace=True
+    ))
+    response = supervisor.send_message(
+        agent=dict_agent,
+        content="Test message",
+        user_id="test_user",
+        session_id="test_session",
+        additional_params={}
+    )
+    assert "DictAgent: Dict mock response" in response
+
+
+def test_send_message_dict_string_content(mock_boto3_client):
+    """Dict with string content items handled correctly."""
+    lead_agent = MockBedrockLLMAgent(BedrockLLMAgentOptions(
+        name="Supervisor", description="Test lead_agent"
+    ))
+    str_agent = MockDictStringContentAgent(BedrockLLMAgentOptions(
+        name="StrAgent", description="Returns dict with strings"
+    ))
+    supervisor = SupervisorAgent(SupervisorAgentOptions(
+        name="SupervisorAgent",
+        description="Test supervisor",
+        lead_agent=lead_agent,
+        team=[str_agent],
+        storage=mock_storage(),
+        trace=True
+    ))
+    response = supervisor.send_message(
+        agent=str_agent,
+        content="Test message",
+        user_id="test_user",
+        session_id="test_session",
+        additional_params={}
+    )
+    assert "StrAgent: plain text response" in response
+
+
+def test_send_message_conversation_message_regression(mock_boto3_client):
+    """Normal ConversationMessage still works (explicit isinstance path)."""
+    lead_agent = MockBedrockLLMAgent(BedrockLLMAgentOptions(
+        name="Supervisor", description="Test lead_agent"
+    ))
+    normal_agent = MockBedrockLLMAgent(BedrockLLMAgentOptions(
+        name="NormalAgent", description="Returns ConversationMessage"
+    ))
+    supervisor = SupervisorAgent(SupervisorAgentOptions(
+        name="SupervisorAgent",
+        description="Test supervisor",
+        lead_agent=lead_agent,
+        team=[normal_agent],
+        storage=mock_storage(),
+        trace=True
+    ))
+    response = supervisor.send_message(
+        agent=normal_agent,
+        content="Test message",
+        user_id="test_user",
+        session_id="test_session",
+        additional_params={}
+    )
+    assert "NormalAgent: Mock response" in response
+
+
+def test_process_agent_streaming_response_dict_final_message(mock_boto3_client):
+    """Streaming with dict final_message handled correctly."""
+    lead_agent = MockBedrockLLMAgent(BedrockLLMAgentOptions(
+        name="Supervisor", description="Test lead_agent"
+    ))
+    streaming_agent = MockStreamingDictAgent(BedrockLLMAgentOptions(
+        name="StreamDict", description="Streaming dict agent"
+    ))
+    supervisor = SupervisorAgent(SupervisorAgentOptions(
+        name="SupervisorAgent",
+        description="Test supervisor",
+        lead_agent=lead_agent,
+        team=[streaming_agent],
+        storage=mock_storage(),
+        trace=True
+    ))
+    response = supervisor.send_message(
+        agent=streaming_agent,
+        content="Test message",
+        user_id="test_user",
+        session_id="test_session",
+        additional_params={}
+    )
+    assert "StreamDict: Streamed dict response" in response
+
+
+def test_process_agent_streaming_response_conversation_message(mock_boto3_client):
+    """Streaming with proper ConversationMessage (regression)."""
+    lead_agent = MockBedrockLLMAgent(BedrockLLMAgentOptions(
+        name="Supervisor", description="Test lead_agent"
+    ))
+    streaming_agent = MockStreamingConversationAgent(BedrockLLMAgentOptions(
+        name="StreamCM", description="Streaming CM agent"
+    ))
+    supervisor = SupervisorAgent(SupervisorAgentOptions(
+        name="SupervisorAgent",
+        description="Test supervisor",
+        lead_agent=lead_agent,
+        team=[streaming_agent],
+        storage=mock_storage(),
+        trace=True
+    ))
+    response = supervisor.send_message(
+        agent=streaming_agent,
+        content="Test message",
+        user_id="test_user",
+        session_id="test_session",
+        additional_params={}
+    )
+    assert "StreamCM: Streamed CM response" in response
+
+
+@pytest.mark.asyncio
+async def test_send_messages_with_dict_response_agent(mock_boto3_client):
+    """End-to-end through send_messages with dict-returning agent."""
+    lead_agent = MockBedrockLLMAgent(BedrockLLMAgentOptions(
+        name="Supervisor", description="Test lead_agent"
+    ))
+    dict_agent = MockDictResponseAgent(BedrockLLMAgentOptions(
+        name="DictTeamMember", description="Returns dict"
+    ))
+    supervisor = SupervisorAgent(SupervisorAgentOptions(
+        name="SupervisorAgent",
+        description="Test supervisor",
+        lead_agent=lead_agent,
+        team=[dict_agent],
+        storage=mock_storage(),
+        trace=True
+    ))
+    messages = [{"recipient": "DictTeamMember", "content": "Test message"}]
+    response = await supervisor.send_messages(messages)
+    assert "DictTeamMember: Dict mock response" in response
