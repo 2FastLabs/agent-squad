@@ -334,14 +334,14 @@ async def main():
 
         # Stream the content
         async for chunk in response.output:
-            async for chunk in response.output:
-              if isinstance(chunk, AgentStreamResponse):
-                  print(chunk.text, end='', flush=True)
-              else:
-                  print(f"Received unexpected chunk type: {type(chunk)}", file=sys.stderr)
+            if isinstance(chunk, AgentStreamResponse):
+                print(chunk.text, end='', flush=True)
+            else:
+                print(f"Received unexpected chunk type: {type(chunk)}", file=sys.stderr)
+        print()
 
     else:
-        # Handle non-streaming response (AgentProcessingResult)
+        # Handle non-streaming response (ConversationMessage)
         print("\n** RESPONSE ** \n")
         print(f"> Agent ID: {response.metadata.agent_id}")
         print(f"> Agent Name: {response.metadata.agent_name}")
