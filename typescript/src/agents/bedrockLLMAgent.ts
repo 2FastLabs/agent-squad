@@ -357,7 +357,7 @@ export class BedrockLLMAgent extends Agent {
 
             const toolHandler =
               this.toolConfig.useToolHandler ??
-              (async (response, conversationHistory) => {
+              (async (response, _conversationHistory) => {
                 if (this.isAgentTools(tools)) {
                   return tools.toolHandler(
                     response,
@@ -367,10 +367,9 @@ export class BedrockLLMAgent extends Agent {
                     this.getInputData.bind(this)
                   );
                 }
-                // Only use legacy handler when it's not AgentTools
-                return this.toolConfig.useToolHandler(
-                  response,
-                  conversationHistory
+                // Legacy Tool[] requires an explicit useToolHandler
+                throw new Error(
+                  "toolConfig.useToolHandler is required when using Tool[] instead of AgentTools"
                 );
               });
 
@@ -383,6 +382,7 @@ export class BedrockLLMAgent extends Agent {
 
             continueWithTools = true;
             converseCmd.messages.push(formattedResponse);
+            this.pendingToolResponses.push(formattedResponse);
           } else {
             continueWithTools = false;
             finalMessage = bedrockResponse;
@@ -473,7 +473,7 @@ export class BedrockLLMAgent extends Agent {
             const tools = this.toolConfig.tool;
             const toolHandler =
               this.toolConfig.useToolHandler ??
-              (async (response, conversationHistory) => {
+              (async (response, _conversationHistory) => {
                 if (this.isAgentTools(tools)) {
                   return tools.toolHandler(
                     response,
@@ -483,10 +483,9 @@ export class BedrockLLMAgent extends Agent {
                     this.getInputData.bind(this)
                   );
                 }
-                // Only use legacy handler when it's not AgentTools
-                return this.toolConfig.useToolHandler(
-                  response,
-                  conversationHistory
+                // Legacy Tool[] requires an explicit useToolHandler
+                throw new Error(
+                  "toolConfig.useToolHandler is required when using Tool[] instead of AgentTools"
                 );
               });
 
@@ -494,6 +493,7 @@ export class BedrockLLMAgent extends Agent {
             const formattedResponse = this.formatToolResults(toolResponse);
 
             input.messages.push(formattedResponse);
+            this.pendingToolResponses.push(formattedResponse);
             toolUse = true;
           } else if (chunk.messageStop?.stopReason === "end_turn") {
             toolUse = false;

@@ -190,6 +190,12 @@ class AgentSquad:
                                                         user_id,
                                                         session_id,
                                                         classifier_result.selected_agent)
+                                    # Save tool_result messages from streaming tool processing
+                                    agent = classifier_result.selected_agent
+                                    if hasattr(agent, '_pending_tool_responses') and agent._pending_tool_responses:
+                                        for tool_msg in agent._pending_tool_responses:
+                                            await self.save_message(tool_msg, user_id, session_id, agent)
+                                        agent._pending_tool_responses = []
 
 
                             final_response = process_stream()
@@ -209,6 +215,12 @@ class AgentSquad:
                                                 user_id,
                                                 session_id,
                                                 classifier_result.selected_agent)
+                                # Save tool_result messages from streaming tool processing
+                                agent = classifier_result.selected_agent
+                                if hasattr(agent, '_pending_tool_responses') and agent._pending_tool_responses:
+                                    for tool_msg in agent._pending_tool_responses:
+                                        await self.save_message(tool_msg, user_id, session_id, agent)
+                                    agent._pending_tool_responses = []
                             return full_message
                         final_response = await process_stream()
 
@@ -219,6 +231,17 @@ class AgentSquad:
                                             user_id,
                                             session_id,
                                             classifier_result.selected_agent)
+
+                # Save tool_result messages that were created during tool processing.
+                # These are USER-role messages containing tool results that must be
+                # persisted so that subsequent requests include them in conversation history.
+                # Without this, the LLM sees tool_use blocks without corresponding
+                # tool_result blocks, causing API validation errors.
+                agent = classifier_result.selected_agent
+                if hasattr(agent, '_pending_tool_responses') and agent._pending_tool_responses:
+                    for tool_msg in agent._pending_tool_responses:
+                        await self.save_message(tool_msg, user_id, session_id, agent)
+                    agent._pending_tool_responses = []
 
                 return AgentResponse(
                     metadata=metadata,

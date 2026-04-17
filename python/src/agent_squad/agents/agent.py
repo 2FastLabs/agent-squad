@@ -252,6 +252,7 @@ class Agent(ABC):
             options.callbacks if options.callbacks is not None else AgentCallbacks()
         )
         self.log_debug_trace = options.LOG_AGENT_DEBUG_TRACE
+        self._pending_tool_responses: list[ConversationMessage] = []
 
     def is_streaming_enabled(self) -> bool:
         """
