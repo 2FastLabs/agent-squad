@@ -54,7 +54,7 @@ Yes, the framework includes a built-in DynamoDB storage option. For detailed ins
 
 ##### Can I deploy the Agent Squad on AWS Lambda?
 
-Yes, the system is designed for seamless deployment as an AWS Lambda function. For step-by-step guidance on integrating the orchestrator with Lambda, processing incoming requests, and handling responses, please consult the [AWS Lambda Integration](/agent-squad/deployment/aws-lambda) section in our documentation.
+Yes, the system is designed for seamless deployment as an AWS Lambda function. For step-by-step guidance on integrating the orchestrator with Lambda, processing incoming requests, and handling responses, please consult the [AWS Lambda Integration](/agent-squad/cookbook/lambda/aws-lambda-python/) section in our documentation.
 
 <br />
 
@@ -115,8 +115,8 @@ Yes, [Bedrock LLM Agent](/agent-squad/agents/built-in/bedrock-llm-agent) support
 
 For practical examples of implementing tools with agents, refer to our documentation on:
 
-- [Creating a Weather Agent with Custom Tools](/agent-squad/advanced-features/weather-tool-use)
-- [Building a Math Agent using Tools](/agent-squad/advanced-features/math-tool-use)
+- [Creating a Weather Agent with Custom Tools](/agent-squad/cookbook/tools/weather-api)
+- [Building a Math Agent using Tools](/agent-squad/cookbook/tools/math-operations)
 
 These guides demonstrate how to define tool specifications, implement handlers, and integrate tools into BedrockLLMAgent instances, helping you create powerful, domain-specific AI assistants.
 
@@ -139,7 +139,7 @@ This custom implementation was chosen because we wanted to have complete control
 
 Yes, logging can be fully customized. While the orchestrator uses `console.log` by default, you can provide your own logger when initializing the orchestrator.
 
-For detailed instructions on customizing logging, see our [Logging documentation](/agent-squad/advanced-features/logging).
+For detailed instructions on customizing logging, see our [Logging documentation](/agent-squad/cookbook/monitoring/logging).
 
 
 ##### For a user intent, is there the possibility to execute multiple processing (so like multiple agents)?
