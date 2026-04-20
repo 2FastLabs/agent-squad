@@ -9,6 +9,7 @@ from agent_squad.types import (
     ParticipantRole,
 )
 from uuid import UUID
+import json
 
 
 @dataclass
@@ -36,6 +37,13 @@ class AgentToolResult:
                 "toolUseId": self.tool_use_id,
                 "content": [{"text": self.content}],
             }
+        }
+
+    def to_openai_format(self) -> dict:
+        return {
+            "role": ParticipantRole.TOOL.value,
+            "tool_call_id": self.tool_use_id,
+            "content": self.content,
         }
 
 
@@ -245,12 +253,16 @@ class AgentTools:
             tool_name = (
                 tool_use_block.get("name")
                 if provider_type == AgentProviderType.BEDROCK.value
+                else tool_use_block.get("name")
+                if provider_type == AgentProviderType.OPENAI.value
                 else tool_use_block.name
             )
 
             tool_id = (
                 tool_use_block.get("toolUseId")
                 if provider_type == AgentProviderType.BEDROCK.value
+                else block.get('id')
+                if provider_type == AgentProviderType.OPENAI.value
                 else tool_use_block.id
             )
 
@@ -258,6 +270,8 @@ class AgentTools:
             input_data = (
                 tool_use_block.get("input", {})
                 if provider_type == AgentProviderType.BEDROCK.value
+                else json.loads(tool_use_block.get("arguments", "{}"))
+                if provider_type == AgentProviderType.OPENAI.value
                 else tool_use_block.input
             )
 
@@ -277,6 +291,8 @@ class AgentTools:
             formatted_result = (
                 tool_result.to_bedrock_format()
                 if provider_type == AgentProviderType.BEDROCK.value
+                else tool_result.to_openai_format()
+                if provider_type == AgentProviderType.OPENAI.value
                 else tool_result.to_anthropic_format()
             )
 
@@ -286,6 +302,10 @@ class AgentTools:
         if provider_type == AgentProviderType.BEDROCK.value:
             return ConversationMessage(
                 role=ParticipantRole.USER.value, content=tool_results
+            )
+        elif provider_type == AgentProviderType.OPENAI.value:
+            return ConversationMessage(
+                role=ParticipantRole.TOOL.value, content=tool_results
             )
         else:
             return {"role": ParticipantRole.USER.value, "content": tool_results}
@@ -298,9 +318,11 @@ class AgentTools:
             return block["toolUse"]
         elif (
             provider_type == AgentProviderType.ANTHROPIC.value
-            and block.type == "tool_use"
+            and block.get('type') == "tool_use"
         ):
             return block
+        elif provider_type == AgentProviderType.OPENAI.value and block.get('type') == "function":
+            return block["function"]
         return None
 
     async def _process_tool(self, tool_name, input_data):
@@ -317,3 +339,7 @@ class AgentTools:
     def to_bedrock_format(self) -> list[dict[str, Any]]:
         """Convert all tools to Bedrock format"""
         return [tool.to_bedrock_format() for tool in self.tools]
+
+    def to_openai_format(self) -> list[dict[str, Any]]:
+        """Convert all tools to Claude format"""
+        return [tool.to_openai_format() for tool in self.tools]
