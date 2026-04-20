@@ -146,9 +146,8 @@ class AgentCallbacks:
 
         Parameters:
             self: The instance of the callback handler class.
-            agent_name: Name of the agent that is starting.
+            name: Name of the llm that is starting.
             payload_input: Dictionary containing the agent's input.
-            messages: List of message dictionaries representing the conversation history.
             run_id: Unique identifier for this specific agent run.
             tags: Optional list of string tags associated with this agent run.
             metadata: Optional dictionary containing additional metadata about the run.
