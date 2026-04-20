@@ -216,5 +216,45 @@ class TestComprehendFilterAgent(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(agent.sentiment_threshold, 0.5)
         self.assertEqual(agent.toxicity_threshold, 0.8)
 
+    async def test_initialization_without_client_uses_comprehend_client(self):
+        """Test that comprehend_client is correctly set when no client is passed.
+
+        This regression test verifies the fix for issue #359 where passing
+        client=None would cause an AttributeError because the boto3 client
+        was incorrectly assigned to self.client instead of self.comprehend_client.
+        """
+        from unittest.mock import patch, MagicMock
+
+        mock_boto_client = MagicMock()
+        with patch('boto3.client', return_value=mock_boto_client) as mock_boto:
+            # Test with region specified
+            agent_with_region = ComprehendFilterAgent(
+                ComprehendFilterAgentOptions(
+                    name="Test Filter Agent",
+                    description="Test agent",
+                    client=None,
+                    region="us-east-1"
+                )
+            )
+            # Verify comprehend_client attribute exists and is set correctly
+            self.assertTrue(hasattr(agent_with_region, 'comprehend_client'))
+            self.assertEqual(agent_with_region.comprehend_client, mock_boto_client)
+            mock_boto.assert_called_with('comprehend', region_name='us-east-1')
+
+        with patch('boto3.client', return_value=mock_boto_client) as mock_boto:
+            # Test without region (uses default)
+            agent_without_region = ComprehendFilterAgent(
+                ComprehendFilterAgentOptions(
+                    name="Test Filter Agent",
+                    description="Test agent",
+                    client=None,
+                    region=None
+                )
+            )
+            # Verify comprehend_client attribute exists and is set correctly
+            self.assertTrue(hasattr(agent_without_region, 'comprehend_client'))
+            self.assertEqual(agent_without_region.comprehend_client, mock_boto_client)
+            mock_boto.assert_called_with('comprehend')
+
 if __name__ == '__main__':
     unittest.main()
