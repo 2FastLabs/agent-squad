@@ -6,12 +6,17 @@ This Streamlit application demonstrates the capabilities of the AWS Agent Squad 
 
 ## 🎯 Current Demos
 
-### 🎬 [AI Movie Production](../movie-production/README.md)
+### 💬 [Chat Demo](./chat-demo/README.md)
+**Requirements**: AWS Account with Amazon Bedrock access (Claude models enabled)
+
+Experience the core multi-agent routing capability through an interactive chat interface. Ask questions about technology, health, weather, or math - the system automatically routes your query to the most appropriate specialized agent.
+
+### 🎬 [AI Movie Production](./movie-production/README.md)
 **Requirements**: AWS Account with Amazon Bedrock access (Claude models enabled)
 
 Bring your movie ideas to life with this AI-powered production assistant. Describe your movie concept, select a genre and target audience, and let the system create a comprehensive script outline and recommend actors for the main roles based on real-time research.
 
-### ✈️ [AI Travel Planner](../travel-planner/README.md)
+### ✈️ [AI Travel Planner](./travel-planner/README.md)
 **Requirements**: Anthropic API Key
 
 Enter your destination and travel duration, and the system will research attractions, accommodations, and activities in real-time to create a personalized, day-by-day itinerary based on your preferences.
@@ -49,6 +54,16 @@ streamlit run main-app.py
 ```
 
 ## 🎮 Featured Demos
+
+### 💬 Chat Demo
+**Prerequisite**: AWS Account with Amazon Bedrock access (Claude models enabled)
+
+Experience intelligent agent routing through an interactive chat interface:
+- **Tech Agent** ([BedrockLLMAgent](https://awslabs.github.io/agent-squad/agents/built-in/bedrock-llm-agent)): Answers technology and programming questions
+- **Health Agent** ([BedrockLLMAgent](https://awslabs.github.io/agent-squad/agents/built-in/bedrock-llm-agent)): Provides wellness and health information
+- **Weather Agent** ([BedrockLLMAgent](https://awslabs.github.io/agent-squad/agents/built-in/bedrock-llm-agent) with tools): Gets current weather for any city
+- **Math Agent** ([BedrockLLMAgent](https://awslabs.github.io/agent-squad/agents/built-in/bedrock-llm-agent) with tools): Performs calculations and explains math
+- Automatically routed by [**BedrockClassifier**](https://awslabs.github.io/agent-squad/classifiers/built-in/bedrock-classifier)
 
 ### 🎬 AI Movie Production Studio
 **Prerequisite**: AWS Account with Amazon Bedrock access (Claude models enabled)
