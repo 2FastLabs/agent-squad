@@ -26,6 +26,16 @@ export class DynamoDbChatStorage extends ChatStorage {
     this.docClient = DynamoDBDocumentClient.from(client);
   }
 
+  /**
+   * Allows subclasses to customize the DynamoDB Document Client.
+   * Useful for local development, testing, or custom endpoint configurations.
+   * @param client - The DynamoDBDocumentClient to use
+   * @protected
+   */
+  protected setDocClient(client: DynamoDBDocumentClient): void {
+    this.docClient = client;
+  }
+
   async saveChatMessage(
     userId: string,
     sessionId: string,
