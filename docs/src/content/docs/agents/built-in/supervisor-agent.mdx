@@ -52,10 +52,12 @@ You can use the SupervisorAgent directly, bypassing the classifier, when you wan
     });
 
     // Use directly
+    const chatHistory = [];
     const response = await supervisorAgent.processRequest(
       "I need to modify my flight and check my refund status",
       "user123",
-      "session456"
+      "session456",
+      chatHistory
     );
     ```
   </TabItem>
@@ -87,10 +89,12 @@ You can use the SupervisorAgent directly, bypassing the classifier, when you wan
     ))
 
     # Use directly
+    chatHistory = []
     response = await supervisor_agent.process_request(
         "I need to modify my flight and check my refund status",
         "user123",
-        "session456"
+        "session456",
+        chatHistory
     )
     ```
   </TabItem>
