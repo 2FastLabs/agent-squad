@@ -11,6 +11,7 @@ BEDROCK_MODEL_ID_CLAUDE_3_7_SONNET = "anthropic.claude-3-7-sonnet-20250219-v1:0"
 BEDROCK_MODEL_ID_LLAMA_3_70B = "meta.llama3-70b-instruct-v1:0"
 OPENAI_MODEL_ID_GPT_O_MINI = "gpt-4o-mini"
 ANTHROPIC_MODEL_ID_CLAUDE_3_5_SONNET = "claude-3-5-sonnet-20240620"
+ANTHROPIC_MODEL_ID_CLAUDE_SONNET_4 = "claude-sonnet-4-20250514"
 
 class AgentProviderType(Enum):
     BEDROCK = "BEDROCK"
