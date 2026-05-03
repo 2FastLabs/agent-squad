@@ -69,6 +69,18 @@ def score_text_response(text: str) -> Triplet:
     return Triplet(T=truth, I=indeterminacy, F=falsity)
 
 
+def score_classifier_confidence(confidence: float, selected: bool) -> Triplet:
+    """Map legacy classifier confidence into a neutrosophic triplet."""
+    if isinstance(confidence, bool):
+        raise TypeError("confidence must be a number")
+
+    confidence_value = _clamp(float(confidence))
+    if selected:
+        return Triplet(T=confidence_value, I=1 - confidence_value, F=0)
+
+    return Triplet(T=0, I=max(1 - confidence_value, 0.7), F=0)
+
+
 def _count_matches(text: str, patterns: tuple[str, ...]) -> int:
     return sum(1 for pattern in patterns if pattern in text)
 

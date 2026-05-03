@@ -1,6 +1,6 @@
 import pytest
 
-from agent_squad.neutrosophic import Triplet, score_text_response
+from agent_squad.neutrosophic import Triplet, score_classifier_confidence, score_text_response
 
 
 def test_score_text_response_rejects_non_string_input():
@@ -42,3 +42,20 @@ def test_score_text_response_scores_direct_substantive_answer_with_more_truth():
     )
 
     assert substantive.T > short.T
+
+
+def test_score_classifier_confidence_maps_selected_agent_to_truth_and_indeterminacy():
+    score = score_classifier_confidence(0.8, selected=True)
+
+    assert score.T == 0.8
+    assert score.I == pytest.approx(0.2)
+    assert score.F == 0.0
+
+
+def test_score_classifier_confidence_maps_no_agent_to_clarification_indeterminacy():
+    assert score_classifier_confidence(0.95, selected=False) == Triplet(T=0.0, I=0.7, F=0.0)
+
+
+def test_score_classifier_confidence_rejects_boolean_confidence():
+    with pytest.raises(TypeError, match="confidence must be a number"):
+        score_classifier_confidence(True, selected=True)
