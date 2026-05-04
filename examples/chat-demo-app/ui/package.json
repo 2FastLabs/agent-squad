@@ -23,7 +23,7 @@
     "rehype-raw": "^7.0.0",
     "remark-gfm": "^4.0.0",
     "typescript": "^5.6.2",
-    "uuid": "^10.0.0"
+    "uuid": "^14.0.0"
   },
   "devDependencies": {
     "@astrojs/tailwind": "^5.1.1",
