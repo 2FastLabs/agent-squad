@@ -28,7 +28,7 @@ class AnthropicAgentOptions(AgentOptions):
     """
     api_key: Optional[str] = None
     client: Optional[Any] = None
-    model_id: str = "claude-3-5-sonnet-20240620"
+    model_id: str = "claude-sonnet-4-20250514"
     streaming: Optional[bool] = False
     inference_config: Optional[dict[str, Any]] = None
     retriever: Optional[Retriever] = None
@@ -65,7 +65,7 @@ class AnthropicAgent(Agent):
 
         self.model_id = options.model_id
 
-        default_inference_config = {"maxTokens": 1000, "temperature": 0.1, "topP": 0.9, "stopSequences": []}
+        default_inference_config = {"maxTokens": 1000, "temperature": 0.1, "stopSequences": []}
 
         if options.inference_config:
             self.inference_config = {**default_inference_config, **options.inference_config}
@@ -165,9 +165,13 @@ class AnthropicAgent(Agent):
             "messages": messages,
             "system": system_prompt,
             "temperature": self.inference_config.get("temperature"),
-            "top_p": self.inference_config.get("topP"),
             "stop_sequences": self.inference_config.get("stopSequences"),
         }
+
+        # Only pass top_p if explicitly set — newer Anthropic models reject both temperature and top_p
+        top_p = self.inference_config.get("topP")
+        if top_p is not None:
+            json_input["top_p"] = top_p
 
         # Add any additional model request fields
         if self.additional_model_request_fields:
@@ -219,6 +223,14 @@ class AnthropicAgent(Agent):
                     payload_input["messages"].append({"role": "assistant", "content": final_response.content})
                     tool_response = await self._process_tool_block(final_response, messages, agent_tracking_info)
                     payload_input["messages"].append(tool_response)
+                    # Collect tool_response for storage persistence
+                    if isinstance(tool_response, dict) and tool_response.get("role") == "user":
+                        self._pending_tool_responses.append(
+                            ConversationMessage(
+                                role=ParticipantRole.USER.value,
+                                content=tool_response.get("content", [])
+                            )
+                        )
 
                 else:
                     continue_with_tools = False
@@ -315,6 +327,14 @@ class AnthropicAgent(Agent):
                 payload_input["messages"].append({"role": "assistant", "content": llm_response.content})
                 tool_response = await self._process_tool_block(llm_response, messages, agent_tracking_info)
                 payload_input["messages"].append(tool_response)
+                # Collect tool_response for storage persistence
+                if isinstance(tool_response, dict) and tool_response.get("role") == "user":
+                    self._pending_tool_responses.append(
+                        ConversationMessage(
+                            role=ParticipantRole.USER.value,
+                            content=tool_response.get("content", [])
+                        )
+                    )
             else:
                 continue_with_tools = False
                 llm_content = llm_response.content or [{"text": "No final response generated"}]

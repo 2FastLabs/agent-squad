@@ -201,6 +201,9 @@ export abstract class Agent {
   // If true, the agent will log additional debug information
   LOG_AGENT_DEBUG_TRACE?: boolean;
 
+  // Tool response messages collected during tool processing for storage persistence
+  pendingToolResponses: ConversationMessage[] = [];
+
   /**
    * Constructs a new Agent instance.
    * @param options - Configuration options for the agent.

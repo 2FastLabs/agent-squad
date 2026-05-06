@@ -212,6 +212,7 @@ class BedrockLLMAgent(Agent):
             if any("toolUse" in content for content in llm_response.content):
                 tool_response = await self._process_tool_block(llm_response, conversation, agent_tracking_info)
                 conversation.append(tool_response)
+                self._pending_tool_responses.append(tool_response)
                 command["messages"] = conversation_to_dict(conversation)
             else:
                 continue_with_tools = False
@@ -260,6 +261,7 @@ class BedrockLLMAgent(Agent):
                     tool_response = await self._process_tool_block(final_response, conversation, agent_tracking_info)
 
                     conversation.append(tool_response)
+                    self._pending_tool_responses.append(tool_response)
                     command["messages"] = conversation_to_dict(conversation)
                 else:
                     continue_with_tools = False
