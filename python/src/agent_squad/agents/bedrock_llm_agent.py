@@ -224,6 +224,13 @@ class BedrockLLMAgent(Agent):
                 agent_tracking_info = {}
             agent_tracking_info["final_thinking"] = accumulated_thinking
 
+        # If max_recursions exhausted during tool loop, llm_response may contain tool_use blocks
+        if llm_response and any("toolUse" in content for content in llm_response.content):
+            llm_response = ConversationMessage(
+                role=ParticipantRole.ASSISTANT.value,
+                content=[{"text": "Maximum tool recursion limit reached without a final response."}]
+            )
+
         return llm_response
 
     async def _handle_streaming(
@@ -261,10 +268,19 @@ class BedrockLLMAgent(Agent):
 
                     conversation.append(tool_response)
                     command["messages"] = conversation_to_dict(conversation)
+                    # Clear final_response so we detect max_recursion exhaustion after loop
+                    final_response = None
                 else:
                     continue_with_tools = False
 
                 max_recursions -= 1
+
+            # If max_recursions exhausted during tool loop, final_response is None
+            if final_response is None:
+                final_response = ConversationMessage(
+                    role=ParticipantRole.ASSISTANT.value,
+                    content=[{"text": "Maximum tool recursion limit reached without a final response."}]
+                )
 
             kwargs = {
                 "agent_name": self.name,
