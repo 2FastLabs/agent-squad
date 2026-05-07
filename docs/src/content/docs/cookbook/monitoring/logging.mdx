@@ -33,7 +33,19 @@ export interface OrchestratorOptions {
   </TabItem>
   <TabItem label="Python" icon="seti:python">
 ```python
-// TODO: Add python code here
+from agent_squad import AgentSquad
+from agent_squad.types import AgentSquadConfig
+
+# options accepts a dict or AgentSquadConfig dataclass
+# logger accepts any standard-library-compatible logger
+orchestrator = AgentSquad(
+    options=AgentSquadConfig(
+        LOG_AGENT_CHAT=True,
+        LOG_CLASSIFIER_CHAT=True,
+    ),
+    storage=storage,
+    logger=my_logger,
+)
 ```
   </TabItem>
 </Tabs>
@@ -56,8 +68,8 @@ npm install @aws-lambda-powertools/logger
 
   </TabItem>
   <TabItem label="Python" icon="seti:python">
-```python
-// TODO: Add python code here
+```bash
+pip install aws-lambda-powertools
 ```
   </TabItem>
 </Tabs>
@@ -81,7 +93,9 @@ const logger = new Logger({
   </TabItem>
   <TabItem label="Python" icon="seti:python">
 ```python
-// TODO: Add python code here
+from aws_lambda_powertools import Logger
+
+logger = Logger(service="MyOrchestratorService")
 ```
   </TabItem>
 </Tabs>
@@ -109,7 +123,20 @@ const orchestrator = new AgentSquad({
   </TabItem>
   <TabItem label="Python" icon="seti:python">
 ```python
-// TODO: Add python code here
+from agent_squad import AgentSquad
+from agent_squad.types import AgentSquadConfig
+
+orchestrator = AgentSquad(
+    options=AgentSquadConfig(
+        LOG_AGENT_CHAT=True,
+        LOG_CLASSIFIER_CHAT=True,
+        LOG_CLASSIFIER_RAW_OUTPUT=True,
+        LOG_CLASSIFIER_OUTPUT=True,
+        LOG_EXECUTION_TIMES=True,
+    ),
+    storage=storage,
+    logger=logger,
+)
 ```
   </TabItem>
 </Tabs>
