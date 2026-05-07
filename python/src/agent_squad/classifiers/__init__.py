@@ -21,6 +21,12 @@ try:
 except Exception as e:
     _OPENAI_AVAILABLE = False
 
+try:
+    from .minimax_classifier import MiniMaxClassifier, MiniMaxClassifierOptions
+    _MINIMAX_AVAILABLE = True
+except Exception as e:
+    _MINIMAX_AVAILABLE = False
+
 __all__ = [
     "Classifier",
     "ClassifierResult",
@@ -43,4 +49,10 @@ if _OPENAI_AVAILABLE:
     __all__.extend([
         "OpenAIClassifier",
         "OpenAIClassifierOptions"
+    ])
+
+if _MINIMAX_AVAILABLE:
+    __all__.extend([
+        "MiniMaxClassifier",
+        "MiniMaxClassifierOptions"
     ])

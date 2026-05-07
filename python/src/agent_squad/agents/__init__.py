@@ -31,6 +31,12 @@ except ImportError:
     _OPENAI_AVAILABLE = False
 
 try:
+    from .minimax_agent import MiniMaxAgent, MiniMaxAgentOptions
+    _MINIMAX_AVAILABLE = True
+except ImportError:
+    _MINIMAX_AVAILABLE = False
+
+try:
     from .strands_agent import StrandsAgent
     _STRANDS_AGENTS_AVAILABLE = True
 except ImportError:
@@ -84,6 +90,12 @@ if _OPENAI_AVAILABLE:
     __all__.extend([
             'OpenAIAgent',
             'OpenAIAgentOptions'
+        ])
+
+if _MINIMAX_AVAILABLE:
+    __all__.extend([
+            'MiniMaxAgent',
+            'MiniMaxAgentOptions'
         ])
 
 if _STRANDS_AGENTS_AVAILABLE:
