@@ -34,7 +34,8 @@ from agent_squad.orchestrator import AgentSquad, AgentSquadConfig
 from agent_squad.agents import (BedrockLLMAgent,
  BedrockLLMAgentOptions,
  AgentResponse,
- AgentCallbacks)
+ AgentCallbacks,
+ AgentStreamResponse)
 from agent_squad.types import ConversationMessage, ParticipantRole
 
 orchestrator = AgentSquad(options=AgentSquadConfig(
@@ -71,11 +72,20 @@ orchestrator.add_agent(tech_agent)
 4. Implement the main logic:
 ```python
 async def handle_request(_orchestrator: AgentSquad, _user_input: str, _user_id: str, _session_id: str):
-    response: AgentResponse = await _orchestrator.route_request(_user_input, _user_id, _session_id)
+    response: AgentResponse = await _orchestrator.route_request(
+        _user_input,
+        _user_id,
+        _session_id,
+        stream_response=True,
+    )
     print("\nMetadata:")
     print(f"Selected Agent: {response.metadata.agent_name}")
     if response.streaming:
-        print('Response:', response.output.content[0]['text'])
+        print('Response:', end=' ')
+        async for chunk in response.output:
+            if isinstance(chunk, AgentStreamResponse):
+                print(chunk.text, end='', flush=True)
+        print()
     else:
         print('Response:', response.output.content[0]['text'])
 
