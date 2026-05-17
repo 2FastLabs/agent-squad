@@ -1,3 +1,4 @@
+import math
 import re
 
 from agent_squad.neutrosophic.triplet import Triplet
@@ -74,7 +75,11 @@ def score_classifier_confidence(confidence: float, selected: bool) -> Triplet:
     if isinstance(confidence, bool):
         raise TypeError("confidence must be a number")
 
-    confidence_value = _clamp(float(confidence))
+    confidence_value = float(confidence)
+    if not math.isfinite(confidence_value):
+        raise ValueError("confidence must be finite")
+
+    confidence_value = _clamp(confidence_value)
     if selected:
         return Triplet(T=confidence_value, I=1 - confidence_value, F=0)
 
@@ -82,7 +87,7 @@ def score_classifier_confidence(confidence: float, selected: bool) -> Triplet:
 
 
 def _count_matches(text: str, patterns: tuple[str, ...]) -> int:
-    return sum(1 for pattern in patterns if pattern in text)
+    return sum(len(re.findall(rf"(?<!\w){re.escape(pattern)}(?!\w)", text)) for pattern in patterns)
 
 
 def _clamp(value: float) -> float:

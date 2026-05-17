@@ -34,6 +34,13 @@ def test_score_text_response_increases_falsity_for_errors():
     assert failed.F > direct.F
 
 
+def test_score_text_response_does_not_match_substrings_as_patterns():
+    direct = score_text_response("The terror radius changed after the update.")
+    failed = score_text_response("The update returned an error.")
+
+    assert failed.F > direct.F
+
+
 def test_score_text_response_scores_direct_substantive_answer_with_more_truth():
     short = score_text_response("Maybe.")
     substantive = score_text_response(
@@ -59,3 +66,9 @@ def test_score_classifier_confidence_maps_no_agent_to_clarification_indeterminac
 def test_score_classifier_confidence_rejects_boolean_confidence():
     with pytest.raises(TypeError, match="confidence must be a number"):
         score_classifier_confidence(True, selected=True)
+
+
+@pytest.mark.parametrize("confidence", [float("nan"), float("inf"), float("-inf")])
+def test_score_classifier_confidence_rejects_non_finite_confidence(confidence):
+    with pytest.raises(ValueError, match="confidence must be finite"):
+        score_classifier_confidence(confidence, selected=True)
