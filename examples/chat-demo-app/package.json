@@ -32,7 +32,7 @@
     "aws-cdk-lib": "^2.194.0",
     "aws-lambda": "^1.0.7",
     "constructs": "^10.0.0",
-    "esbuild": "^0.24.0",
+    "esbuild": "^0.28.1",
     "i": "^0.3.7",
     "agent-squad": "^0.0.17",
     "natural": "^7.1.0",
