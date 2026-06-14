@@ -276,6 +276,9 @@ if (response.streaming == true) {
 
 ```bash
 # Optional: Set up a virtual environment
+
+[![Listed on TakoAPI](https://img.shields.io/badge/Listed%20on-TakoAPI-7c3aed)](https://takoapi.com/agents/2fastlabs-agent-squad)
+
 python -m venv venv
 source venv/bin/activate  # On Windows use `venv\Scripts\activate`
 pip install agent-squad[aws]
