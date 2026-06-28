@@ -27,6 +27,14 @@ def dynamodb_table():
 def chat_storage(dynamodb_table):
     return DynamoDbChatStorage(table_name='test_table', region='us-east-1', ttl_key='TTL', ttl_duration=3600)
 
+@pytest.fixture
+def filtered_chat_storage(dynamodb_table):
+    return DynamoDbChatStorage(
+        table_name='test_table',
+        region='us-east-1',
+        content_filters=[('acme-corp', '#COMPANY#'), ('secret-token-xyz', '#TOKEN#')]
+    )
+
 @pytest.mark.asyncio
 async def test_save_and_fetch_chat_message(chat_storage):
     user_id = 'user1'
@@ -142,6 +150,103 @@ async def test_save_and_fetch_chat_messages(chat_storage):
     assert fetched_messages[3].role == ParticipantRole.ASSISTANT.value
     assert fetched_messages[4].content == [{'text': 'Message 4'}]
     assert fetched_messages[4].role == ParticipantRole.USER.value
+
+
+@pytest.mark.asyncio
+async def test_content_filters_replace_on_save_and_restore_on_fetch(filtered_chat_storage):
+    """Sensitive values should be stored as placeholders and restored on fetch."""
+    user_id = 'user1'
+    session_id = 'session1'
+    agent_id = 'agent1'
+    message = ConversationMessage(
+        role=ParticipantRole.USER.value,
+        content=[{'text': 'Hello from acme-corp'}]
+    )
+
+    await filtered_chat_storage.save_chat_message(user_id, session_id, agent_id, message)
+
+    # Verify placeholder is stored in DynamoDB
+    raw = filtered_chat_storage.table.get_item(
+        Key={'PK': user_id, 'SK': filtered_chat_storage._generate_key(user_id, session_id, agent_id)}
+    )
+    stored_text = raw['Item']['conversation'][0]['content'][0]['text']
+    assert stored_text == 'Hello from #COMPANY#'
+
+    # Verify original value is returned by fetch_chat
+    fetched = await filtered_chat_storage.fetch_chat(user_id, session_id, agent_id)
+    assert fetched[0].content == [{'text': 'Hello from acme-corp'}]
+
+
+@pytest.mark.asyncio
+async def test_content_filters_fetch_chat_with_timestamp(filtered_chat_storage):
+    """fetch_chat_with_timestamp must also restore original values."""
+    user_id = 'user1'
+    session_id = 'session1'
+    agent_id = 'agent1'
+    message = ConversationMessage(
+        role=ParticipantRole.USER.value,
+        content=[{'text': 'token: secret-token-xyz'}]
+    )
+
+    await filtered_chat_storage.save_chat_message(user_id, session_id, agent_id, message)
+
+    fetched = await filtered_chat_storage.fetch_chat_with_timestamp(user_id, session_id, agent_id)
+    assert fetched[0].content == [{'text': 'token: secret-token-xyz'}]
+    assert isinstance(fetched[0].timestamp, Decimal)
+
+
+@pytest.mark.asyncio
+async def test_content_filters_multiple_filters_round_trip(filtered_chat_storage):
+    """Multiple filters should all be applied and reversed correctly."""
+    user_id = 'user1'
+    session_id = 'session1'
+    agent_id = 'agent1'
+
+    msg1 = ConversationMessage(
+        role=ParticipantRole.USER.value,
+        content=[{'text': 'Company acme-corp uses secret-token-xyz'}]
+    )
+    msg2 = ConversationMessage(
+        role=ParticipantRole.ASSISTANT.value,
+        content=[{'text': 'Confirmed for acme-corp'}]
+    )
+
+    await filtered_chat_storage.save_chat_message(user_id, session_id, agent_id, msg1)
+    await filtered_chat_storage.save_chat_message(user_id, session_id, agent_id, msg2)
+
+    fetched = await filtered_chat_storage.fetch_chat(user_id, session_id, agent_id)
+    assert fetched[0].content == [{'text': 'Company acme-corp uses secret-token-xyz'}]
+    assert fetched[1].content == [{'text': 'Confirmed for acme-corp'}]
+
+
+@pytest.mark.asyncio
+async def test_content_filters_save_chat_messages(filtered_chat_storage):
+    """save_chat_messages should also apply content filters."""
+    messages = [
+        ConversationMessage(role=ParticipantRole.USER.value, content=[{'text': 'acme-corp question'}]),
+        ConversationMessage(role=ParticipantRole.ASSISTANT.value, content=[{'text': 'acme-corp answer'}]),
+    ]
+
+    await filtered_chat_storage.save_chat_messages('user1', 'session1', 'agent1', messages)
+    fetched = await filtered_chat_storage.fetch_chat('user1', 'session1', 'agent1')
+
+    assert fetched[0].content == [{'text': 'acme-corp question'}]
+    assert fetched[1].content == [{'text': 'acme-corp answer'}]
+
+
+@pytest.mark.asyncio
+async def test_no_content_filters_behaviour_unchanged(chat_storage):
+    """Storage without content_filters must behave identically to the original."""
+    user_id = 'user1'
+    session_id = 'session1'
+    agent_id = 'agent1'
+    message = ConversationMessage(role=ParticipantRole.USER.value, content=[{'text': 'plain text'}])
+
+    saved = await chat_storage.save_chat_message(user_id, session_id, agent_id, message)
+    assert saved[0].content == [{'text': 'plain text'}]
+
+    fetched = await chat_storage.fetch_chat(user_id, session_id, agent_id)
+    assert fetched[0].content == [{'text': 'plain text'}]
 
 
 @pytest.mark.asyncio
