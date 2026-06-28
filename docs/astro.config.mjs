@@ -140,8 +140,9 @@ export default defineConfig({
 						]
 					  },
 					  {
-						label: 'Routing Patterns',
+						label: 'Agentic Patterns',
 						items: [
+						  { label: 'Agentic Patterns Overview', link: '/cookbook/patterns/agentic-patterns' },
 						  { label: 'Cost-Efficient Routing', link: '/cookbook/patterns/cost-efficient' },
 						  { label: 'Multi-lingual Routing', link: '/cookbook/patterns/multi-lingual' }
 						]
