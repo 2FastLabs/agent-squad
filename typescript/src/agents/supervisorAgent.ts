@@ -57,8 +57,8 @@ export class SupervisorAgent extends Agent {
 
     super({
       ...options,
-      name: options.leadAgent.name,
-      description: options.leadAgent.description,
+      name: options.name ?? options.leadAgent.name,
+      description: options.description ?? options.leadAgent.description,
     });
 
     this.leadAgent = options.leadAgent;
