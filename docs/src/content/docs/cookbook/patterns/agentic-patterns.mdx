@@ -1,0 +1,324 @@
+---
+title: Agentic Patterns
+description: Core architectural patterns for building multi-agent systems with Agent Squad
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+Agent Squad supports several proven agentic patterns. Choosing the right pattern depends on whether your tasks are independent (route to the best specialist), sequential (each step feeds the next), or require centralized coordination (one agent directs many).
+
+---
+
+## 1. Multi-Agent Routing
+
+The foundational pattern: a classifier receives the user's message, identifies the best agent for the job, and routes the request to it. Each agent maintains its own conversation history.
+
+**When to use:** Tasks that fall into distinct domains (customer support, booking, billing) where one specialist handles the full request.
+
+<Tabs syncKey="runtime">
+  <TabItem label="TypeScript" icon="seti:typescript" color="blue">
+    ```typescript
+    import {
+      AgentSquad,
+      BedrockLLMAgent,
+      BedrockClassifier
+    } from 'agent-squad';
+
+    const orchestrator = new AgentSquad({
+      classifier: new BedrockClassifier({
+        modelId: 'anthropic.claude-3-haiku-20240307-v1:0'
+      })
+    });
+
+    orchestrator.addAgent(new BedrockLLMAgent({
+      name: "Billing Agent",
+      description: "Handles billing questions, invoices, and payment issues",
+      modelId: "anthropic.claude-3-haiku-20240307-v1:0"
+    }));
+
+    orchestrator.addAgent(new BedrockLLMAgent({
+      name: "Technical Support Agent",
+      description: "Resolves technical issues and troubleshoots software problems",
+      modelId: "anthropic.claude-3-5-sonnet-20241022-v2:0"
+    }));
+
+    const response = await orchestrator.routeRequest(
+      "I can't log into my account",
+      "user-123",
+      "session-abc"
+    );
+    ```
+  </TabItem>
+  <TabItem label="Python" icon="seti:python">
+    ```python
+    from agent_squad.orchestrator import AgentSquad, AgentSquadConfig
+    from agent_squad.agents import BedrockLLMAgent, BedrockLLMAgentOptions
+    from agent_squad.classifiers import BedrockClassifier, BedrockClassifierOptions
+
+    orchestrator = AgentSquad(
+        options=AgentSquadConfig(),
+        classifier=BedrockClassifier(BedrockClassifierOptions(
+            model_id="anthropic.claude-3-haiku-20240307-v1:0"
+        ))
+    )
+
+    orchestrator.add_agent(BedrockLLMAgent(BedrockLLMAgentOptions(
+        name="Billing Agent",
+        description="Handles billing questions, invoices, and payment issues",
+        model_id="anthropic.claude-3-haiku-20240307-v1:0"
+    )))
+
+    orchestrator.add_agent(BedrockLLMAgent(BedrockLLMAgentOptions(
+        name="Technical Support Agent",
+        description="Resolves technical issues and troubleshoots software problems",
+        model_id="anthropic.claude-3-5-sonnet-20241022-v2:0"
+    )))
+
+    response, _ = await orchestrator.route_request(
+        "I can't log into my account",
+        "user-123",
+        "session-abc"
+    )
+    ```
+  </TabItem>
+</Tabs>
+
+---
+
+## 2. Supervisor Pattern
+
+A `SupervisorAgent` acts as the entry point. It coordinates a **team** of specialist agents, sending messages to one or more of them in parallel and synthesizing their responses into a single answer. The supervisor also handles follow-up questions within the same session.
+
+**When to use:** Complex requests that require multiple specialists simultaneously (e.g., a travel assistant that must check flights, hotels, and weather at the same time).
+
+<Tabs syncKey="runtime">
+  <TabItem label="TypeScript" icon="seti:typescript" color="blue">
+    ```typescript
+    import {
+      AgentSquad,
+      SupervisorAgent,
+      BedrockLLMAgent
+    } from 'agent-squad';
+
+    const flightAgent = new BedrockLLMAgent({
+      name: "Flight Agent",
+      description: "Searches and books flights",
+      modelId: "anthropic.claude-3-haiku-20240307-v1:0"
+    });
+
+    const hotelAgent = new BedrockLLMAgent({
+      name: "Hotel Agent",
+      description: "Finds and reserves hotels",
+      modelId: "anthropic.claude-3-haiku-20240307-v1:0"
+    });
+
+    const leadAgent = new BedrockLLMAgent({
+      name: "Travel Coordinator",
+      description: "Coordinates travel planning by delegating to flight and hotel specialists",
+      modelId: "anthropic.claude-3-5-sonnet-20241022-v2:0"
+    });
+
+    const supervisor = new SupervisorAgent({
+      name: "Travel Supervisor",
+      description: "End-to-end travel planning assistant",
+      leadAgent,
+      team: [flightAgent, hotelAgent]
+    });
+
+    // Use directly, bypassing the classifier
+    const response = await supervisor.processRequest(
+      "Plan a 3-day trip from NYC to Paris next month",
+      "user-123",
+      "session-abc",
+      []
+    );
+    ```
+  </TabItem>
+  <TabItem label="Python" icon="seti:python">
+    ```python
+    from agent_squad.agents import (
+        SupervisorAgent, SupervisorAgentOptions,
+        BedrockLLMAgent, BedrockLLMAgentOptions
+    )
+
+    flight_agent = BedrockLLMAgent(BedrockLLMAgentOptions(
+        name="Flight Agent",
+        description="Searches and books flights",
+        model_id="anthropic.claude-3-haiku-20240307-v1:0"
+    ))
+
+    hotel_agent = BedrockLLMAgent(BedrockLLMAgentOptions(
+        name="Hotel Agent",
+        description="Finds and reserves hotels",
+        model_id="anthropic.claude-3-haiku-20240307-v1:0"
+    ))
+
+    lead_agent = BedrockLLMAgent(BedrockLLMAgentOptions(
+        name="Travel Coordinator",
+        description="Coordinates travel planning by delegating to flight and hotel specialists",
+        model_id="anthropic.claude-3-5-sonnet-20241022-v2:0"
+    ))
+
+    supervisor = SupervisorAgent(SupervisorAgentOptions(
+        name="Travel Supervisor",
+        description="End-to-end travel planning assistant",
+        lead_agent=lead_agent,
+        team=[flight_agent, hotel_agent]
+    ))
+
+    # Use directly, bypassing the classifier
+    response = await supervisor.process_request(
+        "Plan a 3-day trip from NYC to Paris next month",
+        "user-123",
+        "session-abc",
+        []
+    )
+    ```
+  </TabItem>
+</Tabs>
+
+---
+
+## 3. Sequential Chain Pattern
+
+`ChainAgent` passes the output of one agent as the input to the next. Each agent in the chain transforms or enriches the data before handing it off.
+
+**When to use:** Pipelines where stages must happen in order — for example: translate → summarize → format, or extract → validate → generate.
+
+<Tabs syncKey="runtime">
+  <TabItem label="TypeScript" icon="seti:typescript" color="blue">
+    ```typescript
+    import { ChainAgent, BedrockLLMAgent } from 'agent-squad';
+
+    const translationAgent = new BedrockLLMAgent({
+      name: "Translation Agent",
+      description: "Translates text to English",
+      modelId: "anthropic.claude-3-haiku-20240307-v1:0",
+      inferenceConfig: { temperature: 0.0 }
+    });
+
+    const summaryAgent = new BedrockLLMAgent({
+      name: "Summary Agent",
+      description: "Summarises text into three bullet points",
+      modelId: "anthropic.claude-3-haiku-20240307-v1:0"
+    });
+
+    const chain = new ChainAgent({
+      name: "Translate and Summarise",
+      description: "Translates foreign-language text then summarises it",
+      agents: [translationAgent, summaryAgent]
+    });
+
+    const response = await chain.processRequest(
+      "Résumez les nouvelles du jour en Europe.",
+      "user-123",
+      "session-abc",
+      []
+    );
+    ```
+  </TabItem>
+  <TabItem label="Python" icon="seti:python">
+    ```python
+    from agent_squad.agents import (
+        ChainAgent, ChainAgentOptions,
+        BedrockLLMAgent, BedrockLLMAgentOptions
+    )
+
+    translation_agent = BedrockLLMAgent(BedrockLLMAgentOptions(
+        name="Translation Agent",
+        description="Translates text to English",
+        model_id="anthropic.claude-3-haiku-20240307-v1:0",
+        inference_config={"temperature": 0.0}
+    ))
+
+    summary_agent = BedrockLLMAgent(BedrockLLMAgentOptions(
+        name="Summary Agent",
+        description="Summarises text into three bullet points",
+        model_id="anthropic.claude-3-haiku-20240307-v1:0"
+    ))
+
+    chain = ChainAgent(ChainAgentOptions(
+        name="Translate and Summarise",
+        description="Translates foreign-language text then summarises it",
+        agents=[translation_agent, summary_agent]
+    ))
+
+    response = await chain.process_request(
+        "Résumez les nouvelles du jour en Europe.",
+        "user-123",
+        "session-abc",
+        []
+    )
+    ```
+  </TabItem>
+</Tabs>
+
+---
+
+## 4. RAG Pattern
+
+Combine an agent with a retriever to ground responses in your own documents or knowledge base. The agent retrieves relevant context before generating an answer.
+
+**When to use:** Q&A over private documents, internal knowledge bases, or domain-specific corpora where the base LLM has no prior knowledge.
+
+<Tabs syncKey="runtime">
+  <TabItem label="TypeScript" icon="seti:typescript" color="blue">
+    ```typescript
+    import {
+      AgentSquad,
+      BedrockLLMAgent,
+      AmazonKnowledgeBasesRetriever
+    } from 'agent-squad';
+
+    const retriever = new AmazonKnowledgeBasesRetriever({
+      knowledgeBaseId: "YOUR_KB_ID",
+      retrievalConfig: { vectorSearchConfiguration: { numberOfResults: 5 } }
+    });
+
+    const knowledgeAgent = new BedrockLLMAgent({
+      name: "Knowledge Base Agent",
+      description: "Answers questions using the company knowledge base",
+      modelId: "anthropic.claude-3-5-sonnet-20241022-v2:0",
+      retriever
+    });
+
+    const orchestrator = new AgentSquad();
+    orchestrator.addAgent(knowledgeAgent);
+    ```
+  </TabItem>
+  <TabItem label="Python" icon="seti:python">
+    ```python
+    from agent_squad.orchestrator import AgentSquad, AgentSquadConfig
+    from agent_squad.agents import BedrockLLMAgent, BedrockLLMAgentOptions
+    from agent_squad.retrievers import AmazonKnowledgeBasesRetriever, AmazonKnowledgeBasesRetrieverConfig
+
+    retriever = AmazonKnowledgeBasesRetriever(AmazonKnowledgeBasesRetrieverConfig(
+        knowledge_base_id="YOUR_KB_ID",
+        retrieval_config={"vectorSearchConfiguration": {"numberOfResults": 5}}
+    ))
+
+    knowledge_agent = BedrockLLMAgent(BedrockLLMAgentOptions(
+        name="Knowledge Base Agent",
+        description="Answers questions using the company knowledge base",
+        model_id="anthropic.claude-3-5-sonnet-20241022-v2:0",
+        retriever=retriever
+    ))
+
+    orchestrator = AgentSquad(options=AgentSquadConfig())
+    orchestrator.add_agent(knowledge_agent)
+    ```
+  </TabItem>
+</Tabs>
+
+---
+
+## Combining Patterns
+
+Patterns compose freely. A common production setup routes between a `SupervisorAgent` (for complex multi-step tasks) and a RAG agent (for knowledge lookup):
+
+```
+User → Classifier → SupervisorAgent  (parallel team coordination)
+                 ↘ Knowledge Agent   (RAG retrieval)
+```
+
+Start with the simplest pattern that fits your use case and introduce additional layers only when needed.
