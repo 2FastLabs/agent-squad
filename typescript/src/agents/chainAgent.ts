@@ -86,7 +86,7 @@ export class ChainAgent extends Agent {
         }
       } catch (error) {
         Logger.logger.error(`Error processing request with agent ${agent.name}:`, error);
-        throw `Error processing request with agent ${agent.name}:${String(error)}`;
+        throw new Error(`Error processing request with agent ${agent.name}:${String(error)}`);
       }
     }
 
