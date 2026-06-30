@@ -1,0 +1,35 @@
+{
+    "classifier": {
+        "type": "bedrock",
+        "model_id": "us.anthropic.claude-3-5-haiku-20241022-v1:0"
+    },
+    "agents": [
+        {
+            "name": "flight_agent",
+            "description": "Helps users search, book, and manage airline flights and tickets"
+        },
+        {
+            "name": "weather_agent",
+            "description": "Provides weather forecasts and climate information for travel destinations"
+        },
+        {
+            "name": "billing_agent",
+            "description": "Handles billing inquiries, payment issues, refunds, and invoices"
+        }
+    ],
+    "tests": [
+        {
+            "input": "I need to book a flight to Paris next week",
+            "expected": "flight_agent"
+        },
+        {
+            "input": "What is the weather forecast for New York this weekend?",
+            "expected": "weather_agent"
+        },
+        {
+            "input": "I was charged twice on my last invoice",
+            "expected": "billing_agent",
+            "min_confidence": 0.8
+        }
+    ]
+}
