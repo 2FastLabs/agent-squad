@@ -122,6 +122,59 @@ async def test_process_request_with_additional_params(bedrock_agent):
     assert result.content == [{"text": "Response with additional params"}]
 
 
+@pytest.mark.asyncio
+async def test_citations_captured_from_attribution(bedrock_agent):
+    citation = {
+        "generatedResponsePart": {"textResponsePart": {"text": "Paris", "span": {"start": 0, "end": 5}}},
+        "retrievedReferences": [{"content": {"text": "Paris info"}, "location": {"type": "S3", "s3Location": {"uri": "s3://bucket/doc.txt"}}}],
+    }
+    mock_response = {
+        'completion': [
+            {'chunk': {'bytes': b'Paris is lovely.', 'attribution': {'citations': [citation]}}},
+        ]
+    }
+    bedrock_agent.client.invoke_agent = Mock(return_value=mock_response)
+
+    result = await bedrock_agent.process_request("Tell me about Paris", "u1", "s1", [])
+
+    assert result.content == [{"text": "Paris is lovely."}]
+    assert result.citations is not None
+    assert len(result.citations) == 1
+    assert result.citations[0] == citation
+
+
+@pytest.mark.asyncio
+async def test_no_citations_when_attribution_absent(bedrock_agent):
+    mock_response = {
+        'completion': [
+            {'chunk': {'bytes': b'Hello'}},
+        ]
+    }
+    bedrock_agent.client.invoke_agent = Mock(return_value=mock_response)
+
+    result = await bedrock_agent.process_request("Hi", "u1", "s1", [])
+
+    assert result.citations is None
+
+
+@pytest.mark.asyncio
+async def test_citations_merged_across_chunks(bedrock_agent):
+    c1 = {"generatedResponsePart": {"textResponsePart": {"text": "first"}}, "retrievedReferences": []}
+    c2 = {"generatedResponsePart": {"textResponsePart": {"text": "second"}}, "retrievedReferences": []}
+    mock_response = {
+        'completion': [
+            {'chunk': {'bytes': b'first ', 'attribution': {'citations': [c1]}}},
+            {'chunk': {'bytes': b'second', 'attribution': {'citations': [c2]}}},
+        ]
+    }
+    bedrock_agent.client.invoke_agent = Mock(return_value=mock_response)
+
+    result = await bedrock_agent.process_request("Q", "u1", "s1", [])
+
+    assert result.content == [{"text": "first second"}]
+    assert result.citations == [c1, c2]
+
+
 def test_streaming(mock_boto3_client):
     options = AmazonBedrockAgentOptions(
         name="TestAgent",

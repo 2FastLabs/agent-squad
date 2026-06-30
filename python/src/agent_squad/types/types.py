@@ -44,10 +44,12 @@ class ParticipantRole(Enum):
 class ConversationMessage:
     role: ParticipantRole
     content: list[Any]
+    citations: Optional[list[Any]]
 
-    def __init__(self, role: ParticipantRole, content: Optional[list[Any]] = None):
+    def __init__(self, role: ParticipantRole, content: Optional[list[Any]] = None, citations: Optional[list[Any]] = None):
         self.role = role
         self.content = content
+        self.citations = citations
 
 class TimestampedMessage(ConversationMessage):
     def __init__(self,

@@ -41,6 +41,7 @@ export enum ParticipantRole {
 export interface ConversationMessage {
   role: ParticipantRole;
   content: any[] | undefined;
+  citations?: any[];
 }
 
 /**

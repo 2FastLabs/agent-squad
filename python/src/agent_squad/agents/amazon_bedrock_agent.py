@@ -137,23 +137,27 @@ class AmazonBedrockAgent(Agent):
             )
 
             completion = ""
+            citations: list = []
 
             if self.streaming:
                 async def generate_chunks():
-                    nonlocal completion
+                    nonlocal completion, citations
                     for event in response['completion']:
                         if 'chunk' in event:
                             chunk = event['chunk']
                             decoded_response = chunk['bytes'].decode('utf-8')
                             await self.callbacks.on_llm_new_token(decoded_response)
                             completion += decoded_response
+                            if 'attribution' in chunk:
+                                citations.extend(chunk['attribution'].get('citations', []))
                             yield AgentStreamResponse(text=decoded_response)
                         elif 'trace' in event and self.enableTrace:
                             Logger.info(f"Received event: {event}")
                     yield AgentStreamResponse(
                         final_message=ConversationMessage(
                             role=ParticipantRole.ASSISTANT.value,
-                            content=[{'text':completion}]))
+                            content=[{'text': completion}],
+                            citations=citations if citations else None))
                 return generate_chunks()
             else:
                 for event in response['completion']:
@@ -162,12 +166,15 @@ class AmazonBedrockAgent(Agent):
                         decoded_response = chunk['bytes'].decode('utf-8')
                         await self.callbacks.on_llm_new_token(decoded_response)
                         completion += decoded_response
+                        if 'attribution' in chunk:
+                            citations.extend(chunk['attribution'].get('citations', []))
                     elif 'trace' in event and self.enableTrace:
                         Logger.info(f"Received event: {event}")
 
                 return ConversationMessage(
                     role=ParticipantRole.ASSISTANT.value,
-                    content=[{"text": completion}]
+                    content=[{"text": completion}],
+                    citations=citations if citations else None
                 )
         except (BotoCoreError, ClientError) as error:
             # Comprehensive error logging and propagation

@@ -102,25 +102,30 @@ export class AmazonBedrockAgent extends Agent {
       if (this.streaming){
         return this.handleStreamingResponse(response);
       } else {
+        const citations: any[] = [];
         // Aggregate chunks of response data
         for await (const chunkEvent of response.completion) {
           if (chunkEvent.chunk) {
             const chunk = chunkEvent.chunk;
             const decodedResponse = new TextDecoder("utf-8").decode(chunk.bytes);
             completion += decodedResponse;
+            if (chunk.attribution?.citations) {
+              citations.push(...chunk.attribution.citations);
+            }
           } else if (chunkEvent.trace) {
             if (this.enableTrace){
               Logger.logger.info("Trace:", JSON.stringify(chunkEvent.trace));
             }
           }
         }
-      }
 
-      // Return the completed response as a Message object
-      return {
-        role: ParticipantRole.ASSISTANT,
-        content: [{ text: completion }],
-      };
+        // Return the completed response as a Message object
+        return {
+          role: ParticipantRole.ASSISTANT,
+          content: [{ text: completion }],
+          ...(citations.length > 0 && { citations }),
+        };
+      }
     } catch (err) {
       // Handle errors encountered while invoking the Amazon Bedrock agent
       Logger.logger.error(err);
