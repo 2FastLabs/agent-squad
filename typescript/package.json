@@ -1,6 +1,6 @@
 {
   "name": "agent-squad",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Agent Squad framework",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -8,8 +8,8 @@
     "dist"
   ],
   "author": {
-    "name": "Amazon Web Services",
-    "url": "https://aws.amazon.com"
+    "name": "2FastLabs",
+    "url": "https://github.com/2fastlabs"
   },
   "repository": {
     "type": "git",
