@@ -41,7 +41,7 @@ class ToolOutputCurator(ABC):
 
     @abstractmethod
     def curate(self, results: list[CapturedToolResult]) -> str:
-        ...
+        raise NotImplementedError
 
 
 class DataBlockCurator(ToolOutputCurator):
