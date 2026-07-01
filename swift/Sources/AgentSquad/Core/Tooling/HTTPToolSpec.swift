@@ -180,7 +180,7 @@ public struct HTTPToolSpec: Sendable {
             // query-value encoding forbids '&', '=', '+', '#' (prevents parameter injection).
             let charset: CharacterSet = Self.isInQueryPart(url, key: key)
                 ? Self.urlQueryValueAllowed
-                : .urlPathComponentAllowed
+                : Self.urlPathComponentAllowed
             let encoded = raw.addingPercentEncoding(withAllowedCharacters: charset) ?? raw
             urlString = urlString.replacingOccurrences(of: "{\(key)}", with: encoded)
             args.removeValue(forKey: key)
@@ -258,6 +258,15 @@ public struct HTTPToolSpec: Sendable {
     private static let urlQueryValueAllowed: CharacterSet = {
         var allowed = CharacterSet.urlQueryAllowed
         allowed.remove(charactersIn: "&=+#")
+        return allowed
+    }()
+
+    /// Character set safe for percent-encoding a single path component. Starts from `.urlPathAllowed`
+    /// and removes '/' so a value can't inject extra path segments. (Foundation has no built-in
+    /// `urlPathComponentAllowed`.)
+    private static let urlPathComponentAllowed: CharacterSet = {
+        var allowed = CharacterSet.urlPathAllowed
+        allowed.remove(charactersIn: "/")
         return allowed
     }()
 
