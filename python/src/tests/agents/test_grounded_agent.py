@@ -1,6 +1,6 @@
 """Unit tests for GroundedAgent (the 2-LLM grounded pattern)."""
 import pytest
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 from agent_squad.agents import (
     Agent,
