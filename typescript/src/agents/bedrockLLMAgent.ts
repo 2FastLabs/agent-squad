@@ -460,7 +460,7 @@ export class BedrockLLMAgent extends Agent {
             inputString += chunk.contentBlockDelta.delta.toolUse.input;
           } else if (chunk.messageStop?.stopReason === "tool_use") {
             toolBlock.input = JSON.parse(inputString);
-            let message = {
+            const message = {
                 role: ParticipantRole.ASSISTANT,
                 content: [],
               };

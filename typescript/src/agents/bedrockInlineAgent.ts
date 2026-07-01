@@ -288,7 +288,7 @@ import {
                 completion += decodedResponse;
               } else if (this.enableTrace) {
                 // Log chunk event details if tracing is enabled
-                this.logger ? this.logger.info("Chunk Event Details:", JSON.stringify(chunkEvent, null, 2)) : undefined;
+                if (this.logger) this.logger.info("Chunk Event Details:", JSON.stringify(chunkEvent, null, 2));
               }
             }
 
@@ -373,7 +373,7 @@ import {
           ? error.message
           : 'Unknown error occurred';
 
-        this.logger ? this.logger.error("Error processing request with Bedrock:", errorMessage) : undefined;
+        if (this.logger) this.logger.error("Error processing request with Bedrock:", errorMessage);
         throw new Error(`Error processing request with Bedrock: ${errorMessage}`);
       }
     }

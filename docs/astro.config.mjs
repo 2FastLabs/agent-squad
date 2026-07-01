@@ -74,6 +74,7 @@ export default defineConfig({
 									{ label: 'OpenAI Agent', link: '/agents/built-in/openai-agent' },
 									{ label: 'Anthropic Agent', link: '/agents/built-in/anthropic-agent'},
 									{ label: 'Chain Agent', link: '/agents/built-in/chain-agent' },
+									{ label: 'Grounded Agent', link: '/agents/built-in/grounded-agent' },
 									{ label: 'Comprehend Filter Agent', link: '/agents/built-in/comprehend-filter-agent' },
 									{ label: 'Amazon Bedrock Translator Agent', link: '/agents/built-in/bedrock-translator-agent' },
 									{ label: 'Amazon Bedrock Inline Agent', link: '/agents/built-in/bedrock-inline-agent' },

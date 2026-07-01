@@ -37,6 +37,15 @@ except ImportError:
     _STRANDS_AGENTS_AVAILABLE = False
 
 from .supervisor_agent import SupervisorAgent, SupervisorAgentOptions
+from .grounded_agent import (
+    GroundedAgent,
+    GroundedAgentOptions,
+    ToolOutputCurator,
+    DataBlockCurator,
+    PerToolCurator,
+    PresenterPrompt,
+    CapturedToolResult,
+)
 
 __all__ = [
     'Agent',
@@ -46,7 +55,14 @@ __all__ = [
     'AgentResponse',
     'AgentStreamResponse',
     'SupervisorAgent',
-    'SupervisorAgentOptions'
+    'SupervisorAgentOptions',
+    'GroundedAgent',
+    'GroundedAgentOptions',
+    'ToolOutputCurator',
+    'DataBlockCurator',
+    'PerToolCurator',
+    'PresenterPrompt',
+    'CapturedToolResult',
 ]
 
 

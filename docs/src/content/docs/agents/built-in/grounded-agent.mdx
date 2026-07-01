@@ -1,0 +1,393 @@
+---
+title: Grounded Agent
+description: A two-LLM anti-hallucination pattern where a gatherer collects tool output and a presenter answers only from that output.
+---
+
+The `GroundedAgent` is the framework's answer to LLM hallucination in tool-driven answers: **two models**, not one. A **gatherer** calls tools and sees the raw results; a **presenter** turns those results into the reply. Because the presenter has no tools and no tool responses — only the curated feed plus a small prompt — it cannot invent values beyond what was actually fetched.
+
+A chit-chat turn that calls no tools skips the presenter entirely: the gatherer answers directly in one pass.
+
+:::note
+This mirrors the Swift [`GroundedAgent`](/agent-squad/swift/agents/built-in/grounded-agent/). The Swift variant additionally supports tool-UI widgets (`UIPolicy`) and per-phase trace spans; those have no equivalent in the Python/TypeScript trees and are intentionally omitted here.
+:::
+
+## How it works
+
+```
+User question
+      │
+      ▼
+  [ Gatherer ]
+    • its own system prompt
+    • chat history
+    • tools (AgentTools)
+    • runs the tool-call loop
+    • never speaks to the user
+      │
+      ▼  captured tool results
+  [ ToolOutputCurator ]         (default: DataBlockCurator)
+    • curate() → feed string
+      │
+      ▼
+  [ Presenter ]
+    • no tools, no tool results
+    • per-turn prompt            ← PresenterPrompt.resolve(primary tool)
+    • input: question + feed
+    • writes / streams the final reply
+```
+
+The `GroundedAgent` takes two **already-built** agents — a gatherer configured with your tools, and a toolless presenter — plus the `AgentTools` the gatherer uses (it hooks that instance to capture every tool result). Unlike the Swift version, which builds its inner models from LLM clients, the Python/TypeScript version composes two concrete agents, so you can mix any agent types (Bedrock, Anthropic, OpenAI…) for the gatherer and presenter.
+
+## Options
+
+| Option | Notes |
+|---|---|
+| `gatherer` | The brain agent — configured with `tools` and its own system prompt; runs the tool loop and never speaks to the user. Any agent type. |
+| `presenter` | The presenter agent — should have **no** tools; writes the grounded reply. Can be a cheaper/smaller model. |
+| `tools` | The `AgentTools` the gatherer uses. The `GroundedAgent` hooks it to capture results. |
+| `curator` | Shapes the gathered results into the text feed. Default: `DataBlockCurator` (one `### toolName` section per call). |
+| `presenter_prompt` / `presenterPrompt` | Per-tool presenter system prompts. Default: a generic "present only the data" instruction. |
+
+## Minimal example
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+<Tabs syncKey="runtime">
+  <TabItem label="TypeScript" icon="seti:typescript" color="blue">
+    ```typescript
+    import {
+      GroundedAgent,
+      AnthropicAgent,
+      AgentTools,
+    } from 'agent-squad';
+
+    const brain = new AnthropicAgent({
+      name: 'Shop brain',
+      description: 'Gathers product facts.',
+      apiKey: process.env.ANTHROPIC_API_KEY,
+      toolConfig: { tool: myTools },   // myTools: AgentTools
+      customSystemPrompt: {
+        template: `You are the data brain of a shopping assistant.
+          GATHER the facts needed to answer the user — never write the final reply.
+          Never invent values. Do NOT address the user — the presenter does that.`,
+      },
+    });
+
+    const voice = new AnthropicAgent({
+      name: 'Shop presenter',
+      description: 'Presents product facts.',
+      apiKey: process.env.ANTHROPIC_API_KEY,
+      // no toolConfig — the presenter never calls tools
+    });
+
+    const agent = new GroundedAgent({
+      name: 'Shop',
+      description: 'Product search with grounded answers.',
+      gatherer: brain,
+      presenter: voice,
+      tools: myTools,
+    });
+    ```
+  </TabItem>
+  <TabItem label="Python" icon="seti:python">
+    ```python
+    from agent_squad.agents import (
+        GroundedAgent, GroundedAgentOptions,
+        AnthropicAgent, AnthropicAgentOptions,
+    )
+    from agent_squad.utils import AgentTools
+
+    brain = AnthropicAgent(AnthropicAgentOptions(
+        name="Shop brain",
+        description="Gathers product facts.",
+        api_key=api_key,
+        tool_config={"tool": my_tools},   # my_tools: AgentTools
+        custom_system_prompt={"template": """
+            You are the data brain of a shopping assistant.
+            GATHER the facts needed to answer the user — never write the final reply.
+            Never invent values. Do NOT address the user — the presenter does that.
+        """},
+    ))
+
+    voice = AnthropicAgent(AnthropicAgentOptions(
+        name="Shop presenter",
+        description="Presents product facts.",
+        api_key=api_key,
+        # no tool_config — the presenter never calls tools
+    ))
+
+    agent = GroundedAgent(GroundedAgentOptions(
+        name="Shop",
+        description="Product search with grounded answers.",
+        gatherer=brain,
+        presenter=voice,
+        tools=my_tools,
+    ))
+    ```
+  </TabItem>
+</Tabs>
+
+Drop the agent into an orchestrator unchanged:
+
+<Tabs syncKey="runtime">
+  <TabItem label="TypeScript" icon="seti:typescript" color="blue">
+    ```typescript
+    import { AgentSquad } from 'agent-squad';
+
+    const orchestrator = new AgentSquad();
+    orchestrator.addAgent(agent);
+    ```
+  </TabItem>
+  <TabItem label="Python" icon="seti:python">
+    ```python
+    from agent_squad.orchestrator import AgentSquad
+
+    orchestrator = AgentSquad()
+    orchestrator.add_agent(agent)
+    ```
+  </TabItem>
+</Tabs>
+
+## Example: a small shopping chatbot (Python)
+
+A complete, runnable console chatbot. The gatherer calls a tiny in-memory catalog via two tools; the
+presenter answers only from the curated results, so every price and stock figure is grounded. A
+chit-chat turn ("hi there") calls no tools and is answered by the gatherer directly, skipping the
+presenter. The full source is in `examples/grounded-agent-chatbot` in the repository.
+
+```python
+import asyncio
+import os
+
+from agent_squad.agents import (
+    AnthropicAgent, AnthropicAgentOptions,
+    GroundedAgent, GroundedAgentOptions, PresenterPrompt,
+)
+from agent_squad.types import ConversationMessage, ParticipantRole
+from agent_squad.utils import AgentTool, AgentTools
+
+# A tiny in-memory catalog (stands in for a real backend).
+CATALOG = {
+    "p1": {"id": "p1", "name": "Aurora Wireless Headphones", "price": 89.0, "rating": 4.6, "stock": 12},
+    "p2": {"id": "p2", "name": "Nimbus Bluetooth Speaker", "price": 59.0, "rating": 4.3, "stock": 0},
+    "p3": {"id": "p3", "name": "Zephyr Earbuds", "price": 39.0, "rating": 4.1, "stock": 40},
+}
+
+def search_products(query: str, max_price: float = 1000.0) -> list[dict]:
+    """Search the catalog by name substring, cheapest first.
+
+    :param query: text to match against product names
+    :param max_price: only return products at or below this price
+    """
+    q = query.lower()
+    hits = [p for p in CATALOG.values() if q in p["name"].lower() and p["price"] <= max_price]
+    return sorted(hits, key=lambda p: p["price"])
+
+def get_product(product_id: str) -> dict:
+    """Look up a single product by id.
+
+    :param product_id: the product id, e.g. "p1"
+    """
+    return CATALOG.get(product_id, {"error": f"no product with id {product_id}"})
+
+tools = AgentTools([
+    AgentTool(name="search_products", func=search_products, required=["query"]),
+    AgentTool(name="get_product", func=get_product, required=["product_id"]),
+])
+
+api_key = os.environ["ANTHROPIC_API_KEY"]
+
+# The gatherer owns the tools + its own prompt. It gathers facts and never speaks to the user.
+gatherer = AnthropicAgent(AnthropicAgentOptions(
+    name="Shop brain",
+    description="Gathers product facts by calling tools.",
+    api_key=api_key,
+    model_id="claude-3-5-sonnet-20240620",
+    tool_config={"tool": tools, "toolMaxRecursions": 5},
+    custom_system_prompt={"template": """
+        You are the data brain of a shopping assistant.
+        GATHER the facts needed to answer the user — never write the final reply.
+        - Call whatever tools you need; you may chain several.
+        - Use the chat history to resolve follow-ups ("cheaper ones?", "is it in stock?").
+        - Never invent values. If a tool returns nothing, say so.
+        - Do NOT address the user or format anything — the presenter does that.
+    """},
+))
+
+# The presenter has NO tools; it speaks only from the curated feed. A cheaper model is a fine fit.
+presenter = AnthropicAgent(AnthropicAgentOptions(
+    name="Shop voice",
+    description="Presents gathered product facts to the user.",
+    api_key=api_key,
+    model_id="claude-3-5-haiku-20241022",
+))
+
+presenter_prompt = PresenterPrompt(
+    default="Use ONLY the data provided; never invent a value. Be concise and friendly.",
+    per_tool={
+        "search_products": (
+            "You are presenting product search results. Use ONLY the data block — never invent a "
+            "price, rating, name, or stock status. Lead with the best match (name + price), then "
+            "one standout detail. Two short sentences."
+        ),
+        "get_product": (
+            "You are presenting one product. State its name, price, rating, and whether it is in "
+            "stock, in one sentence. Use only the data provided."
+        ),
+    },
+)
+
+shop = GroundedAgent(GroundedAgentOptions(
+    name="Shop",
+    description="A grounded shopping assistant.",
+    gatherer=gatherer,
+    presenter=presenter,
+    tools=tools,
+    presenter_prompt=presenter_prompt,
+))
+
+async def main() -> None:
+    user_id, session_id = "demo-user", "demo-session"
+    history: list[ConversationMessage] = []
+    print("Shop assistant ready. Try: 'headphones under €100?'  (empty line to quit)\n")
+
+    while True:
+        user_input = input("you> ").strip()
+        if not user_input:
+            break
+
+        response = await shop.process_request(user_input, user_id, session_id, history)
+        reply = response.content[0]["text"]
+        print(f"shop> {reply}\n")
+
+        # Persist both sides so follow-ups ("cheaper ones?") have context.
+        history.append(ConversationMessage(role=ParticipantRole.USER.value, content=[{"text": user_input}]))
+        history.append(ConversationMessage(role=ParticipantRole.ASSISTANT.value, content=[{"text": reply}]))
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+A sample session:
+
+```
+you> wireless headphones under €100?
+shop> The best match is Aurora Wireless Headphones at €89 — highly rated at 4.6★.
+
+you> is the speaker in stock?
+shop> The Nimbus Bluetooth Speaker (€59) is currently out of stock.
+
+you> hi there
+shop> Hi! Ask me about our headphones, speakers, or earbuds.   # no tool call → presenter skipped
+```
+
+## PresenterPrompt
+
+`PresenterPrompt` selects the presenter's system prompt based on which tool drove the turn — the **primary tool** (the last tool call of the turn). Supply one default, plus optional per-tool overrides; unmapped tools fall back to the default.
+
+<Tabs syncKey="runtime">
+  <TabItem label="TypeScript" icon="seti:typescript" color="blue">
+    ```typescript
+    import { PresenterPrompt } from 'agent-squad';
+
+    const presenterPrompt = new PresenterPrompt(
+      // default
+      'You are presenting information to the user. Use ONLY the data provided. Be concise and ' +
+      'natural, and never invent or infer values that are not present in the data.',
+      // per-tool overrides
+      {
+        search_products:
+          'You are presenting product search results. Use ONLY the data block provided — never ' +
+          'invent a price, rating, name, or stock status. Lead with the best match.',
+        get_order:
+          'You are presenting an order status. State the order ID, current status, and estimated ' +
+          'delivery in one sentence. Use only the data provided.',
+      },
+    );
+    ```
+  </TabItem>
+  <TabItem label="Python" icon="seti:python">
+    ```python
+    from agent_squad.agents import PresenterPrompt
+
+    presenter_prompt = PresenterPrompt(
+        default=(
+            "You are presenting information to the user. Use ONLY the data provided. Be concise and "
+            "natural, and never invent or infer values that are not present in the data."
+        ),
+        per_tool={
+            "search_products": (
+                "You are presenting product search results. Use ONLY the data block provided — never "
+                "invent a price, rating, name, or stock status. Lead with the best match."
+            ),
+            "get_order": (
+                "You are presenting an order status. State the order ID, current status, and estimated "
+                "delivery in one sentence. Use only the data provided."
+            ),
+        },
+    )
+    ```
+  </TabItem>
+</Tabs>
+
+Pass it as `presenter_prompt` / `presenterPrompt` in the options. The presenter's system prompt is applied per turn, so the presenter agent must expose `set_system_prompt` / `setSystemPrompt` (every built-in LLM agent does).
+
+## ToolOutputCurator
+
+The curator transforms captured tool results into the text string the presenter is fed. It is a pure synchronous transform — no I/O; a curator that needs external data pre-fetches it and is constructed with it.
+
+Two built-in curators ship with the framework:
+
+- **`DataBlockCurator`** (default) — one `### toolName` section per captured call, with the raw string result, or the structured result pretty-printed as JSON. Sections joined by a blank line.
+- **`PerToolCurator`** — route each tool to its own formatter; unmapped tools fall back to the lossless data-block section. Use this to trim oversized payloads before the presenter sees them.
+
+<Tabs syncKey="runtime">
+  <TabItem label="TypeScript" icon="seti:typescript" color="blue">
+    ```typescript
+    import { PerToolCurator, DataBlockCurator } from 'agent-squad';
+
+    const curator = new PerToolCurator({
+      search_products: (tool) => {
+        // keep only the top 3 results to stay within context budget
+        const trimmed = /* … */ tool.result;
+        return `### search_products\n${trimmed}`;
+      },
+    });
+
+    const agent = new GroundedAgent({ /* … */ curator });
+    ```
+  </TabItem>
+  <TabItem label="Python" icon="seti:python">
+    ```python
+    from agent_squad.agents import PerToolCurator, DataBlockCurator
+
+    def trim_search(tool):
+        # keep only the top 3 results to stay within context budget
+        trimmed = tool.result  # ...
+        return f"### search_products\n{trimmed}"
+
+    curator = PerToolCurator({"search_products": trim_search})
+
+    agent = GroundedAgent(GroundedAgentOptions(
+        # …
+        curator=curator,
+    ))
+    ```
+  </TabItem>
+</Tabs>
+
+Custom curators implement `ToolOutputCurator` directly (a single `curate(results) -> str` method).
+
+## No-tool turns
+
+When the gatherer makes no tool calls, the `GroundedAgent` emits the gatherer's own reply directly and skips the presenter. This handles chit-chat, clarifying questions, and fallback answers without paying an extra LLM call.
+
+## Streaming
+
+`GroundedAgent` streams when its **presenter** streams (`is_streaming_enabled` / `isStreamingEnabled` tracks the presenter). On a no-tool turn the gatherer's reply is re-emitted as a single streamed chunk. The gatherer always runs to completion internally so its tool results can be captured before the presenter is invoked.
+
+## Relation to other types
+
+- `GroundedAgent` is a composite agent (like `ChainAgent` and `SupervisorAgent`): it is interchangeable at the orchestrator call site.
+- The gatherer and presenter can be any agent type; only the gatherer is given tools.
+- The same grounding logic drives the Swift [realtime voice](/agent-squad/swift/voice/overview/) runtime.

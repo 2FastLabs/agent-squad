@@ -10,6 +10,17 @@ export { Classifier, ClassifierResult } from './classifiers/classifier';
 export { ChainAgent, ChainAgentOptions } from './agents/chainAgent';
 export {BedrockFlowsAgent, BedrockFlowsAgentOptions} from './agents/bedrockFlowsAgent';
 export { SupervisorAgent, SupervisorAgentOptions } from './agents/supervisorAgent';
+export {
+  GroundedAgent,
+  GroundedAgentOptions,
+  ToolOutputCurator,
+  DataBlockCurator,
+  PerToolCurator,
+  PresenterPrompt,
+  CapturedToolResult,
+  Grounding,
+  DEFAULT_PRESENTER_PROMPT,
+} from './agents/groundedAgent';
 export { AgentResponse } from './agents/agent';
 export { AgentCallbacks } from './agents/agent';
 

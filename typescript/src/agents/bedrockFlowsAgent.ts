@@ -103,7 +103,7 @@ import { addUserAgentMiddleware } from '../common/src/awsSdkUtils';
             completion = flowEvent.flowOutputEvent.content.document;
           } else if (this.enableTrace) {
             // Log chunk event details if tracing is enabled
-            this.logger ? this.logger.info("Flow Event Details:", JSON.stringify(flowEvent, null, 2)) : undefined;
+            if (this.logger) this.logger.info("Flow Event Details:", JSON.stringify(flowEvent, null, 2));
           }
         }
 
@@ -116,7 +116,7 @@ import { addUserAgentMiddleware } from '../common/src/awsSdkUtils';
         ? error.message
         : 'Unknown error occurred';
 
-      this.logger ? this.logger.error("Error processing request with Bedrock:", errorMessage) : undefined;
+      if (this.logger) this.logger.error("Error processing request with Bedrock:", errorMessage);
       throw new Error(`Error processing request with Bedrock: ${errorMessage}`);
     }
   }

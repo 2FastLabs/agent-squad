@@ -71,7 +71,8 @@ export class Logger {
     if (!isRaw && !this.config.LOG_CLASSIFIER_OUTPUT) return;
 
     this.logHeader(isRaw ? 'Raw Classifier Output' : 'Processed Classifier Output');
-    isRaw ? Logger.logger.info(output) : Logger.logger.info(JSON.stringify(output, null, 2));
+    if (isRaw) Logger.logger.info(output);
+    else Logger.logger.info(JSON.stringify(output, null, 2));
     Logger.logger.info('');
   }
 
