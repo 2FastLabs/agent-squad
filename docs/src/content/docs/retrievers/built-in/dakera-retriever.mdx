@@ -1,0 +1,75 @@
+---
+title: Dakera retriever
+description: An overview of the Dakera retriever configuration and usage.
+---
+
+[Dakera](https://dakera.ai) is a self-hosted memory server that provides persistent, decay-weighted vector recall. The `DakeraRetriever` lets an agent fetch the most relevant documents for a query from a Dakera namespace, using Dakera's text-query API (embeddings are generated server-side), so it can be used as a retrieval-augmented context source.
+
+Dakera runs beside your app; the canonical way to run it is the [`dakera-deploy`](https://github.com/dakera-ai/dakera-deploy) docker-compose stack (server + object store, default port `3000`).
+
+## Installation
+
+```bash
+pip install "agent-squad[dakera]"
+```
+
+## Configuration
+
+`DakeraRetrieverOptions` accepts:
+
+| Option      | Default                   | Description                                                                    |
+| ----------- | ------------------------- | ------------------------------------------------------------------------------ |
+| `namespace` | *(required)*              | The Dakera namespace to query.                                                 |
+| `api_key`   | `DAKERA_API_KEY` env      | Dakera API key (a `dk-...` token).                                             |
+| `url`       | `DAKERA_URL` env, else `http://localhost:3000` | Base URL of the Dakera server.                            |
+| `top_k`     | `10`                      | Maximum number of results to return.                                           |
+| `filter`    | `None`                    | Optional Dakera metadata filter applied to the query.                          |
+
+## Using the Dakera retriever
+
+You can add a `DakeraRetriever` to a `BedrockLLMAgent` (or any agent that accepts a retriever), so the LLM generates responses grounded in the documents retrieved from your Dakera namespace:
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+<Tabs syncKey="runtime">
+  <TabItem label="Python" icon="seti:python">
+    ```python
+    from agent_squad.agents import BedrockLLMAgent, BedrockLLMAgentOptions
+    from agent_squad.retrievers import DakeraRetriever, DakeraRetrieverOptions
+
+    orchestrator.add_agent(
+        BedrockLLMAgent(BedrockLLMAgentOptions(
+            name="My personal agent",
+            description="Answers questions using context retrieved from Dakera.",
+            streaming=True,
+            inference_config={
+                "temperature": 0.1,
+            },
+            retriever=DakeraRetriever(DakeraRetrieverOptions(
+                namespace="my-docs",
+                top_k=5,
+            )),
+        ))
+    )
+    ```
+  </TabItem>
+</Tabs>
+
+You can also use the retriever on its own:
+
+```python
+import asyncio
+from agent_squad.retrievers import DakeraRetriever, DakeraRetrieverOptions
+
+retriever = DakeraRetriever(DakeraRetrieverOptions(namespace="my-docs", top_k=5))
+
+# Raw results (list of TextSearchResult with .id / .score / .text / .metadata)
+results = asyncio.run(retriever.retrieve("How many languages are spoken worldwide?"))
+
+# Or a single combined context string, ready to pass to an LLM
+context = asyncio.run(
+    retriever.retrieve_and_combine_results("How many languages are spoken worldwide?")
+)
+```
+
+Set `DAKERA_API_KEY` (and optionally `DAKERA_URL`) in your environment, or pass `api_key`/`url` explicitly in the options. `DakeraRetriever` is retrieval-only, so `retrieve_and_generate` is not supported — use `retrieve` or `retrieve_and_combine_results` and let your agent's LLM generate the response.
