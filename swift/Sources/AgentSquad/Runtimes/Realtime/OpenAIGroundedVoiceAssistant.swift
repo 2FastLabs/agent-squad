@@ -24,6 +24,7 @@ public actor OpenAIGroundedVoiceAssistant: OpenAIRealtimeSession, VoiceAssistant
     nonisolated let traceTranscripts: Bool
     private let curator: any ToolOutputCurator
     private let presenterPrompt: PresenterPrompt
+    private let presenterInput: PresenterInput
     private let agentInstructions: String
     private let directInstructions: String
     nonisolated let model: String
@@ -64,6 +65,7 @@ public actor OpenAIGroundedVoiceAssistant: OpenAIRealtimeSession, VoiceAssistant
         modality: RealtimeModality = RealtimeModality(),
         curator: any ToolOutputCurator = .dataBlock,
         presenterPrompt: PresenterPrompt = .default,
+        presenterInput: PresenterInput = .questionAndData,
         agentInstructions: String = OpenAIGroundedVoiceAssistant.defaultAgentInstructions,
         directInstructions: String = OpenAIGroundedVoiceAssistant.defaultDirectInstructions,
         model: String = "gpt-realtime",
@@ -83,6 +85,7 @@ public actor OpenAIGroundedVoiceAssistant: OpenAIRealtimeSession, VoiceAssistant
         self.modality = modality
         self.curator = curator
         self.presenterPrompt = presenterPrompt
+        self.presenterInput = presenterInput
         self.agentInstructions = agentInstructions
         self.directInstructions = directInstructions
         self.model = model
@@ -240,7 +243,7 @@ public actor OpenAIGroundedVoiceAssistant: OpenAIRealtimeSession, VoiceAssistant
         let primary = Grounding.primary(of: toolResults)
         if let payload = primary?.result.ui { emit(.widget(payload)) }
         let prompt = presenterPrompt.resolve(primaryTool: primary?.name)
-        let message = Grounding.presenterMessage(question: userText, data: feed)
+        let message = Grounding.presenterMessage(question: userText, data: feed, mode: presenterInput)
 
         emit(.state(.presenting))
         presenterActive = true

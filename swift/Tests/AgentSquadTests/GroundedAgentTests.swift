@@ -216,7 +216,7 @@ import Testing
         }
     }
 
-    @Test func historyIsForwardedToThePresenter() async throws {
+    @Test func presenterNeverSeesChatHistory() async throws {
         let presenter = MockLLMClient([.textDelta("x"), .done(reason: .stop, usage: nil)])
         let agent = GroundedAgent(
             name: "sport", gatherer: gathererCalling("odds"), presenter: presenter, tools: oddsProvider()
@@ -226,7 +226,35 @@ import Testing
 
         let messages = presenter.capturedRequests().first?.messages ?? []
         let texts = messages.flatMap(\.parts).compactMap { if case .text(let t) = $0 { return t } else { return nil } }
-        #expect(texts.contains("earlier turn"))
+        #expect(!texts.joined().contains("earlier turn"))
+        #expect(messages.count == 1)   // exactly the curated feed message, nothing else
+    }
+
+    @Test func presenterMessageCarriesTheQuestionByDefault() async throws {
+        let presenter = MockLLMClient([.textDelta("x"), .done(reason: .stop, usage: nil)])
+        let agent = GroundedAgent(
+            name: "sport", gatherer: gathererCalling("odds"), presenter: presenter, tools: oddsProvider()
+        )
+        _ = try await collect(agent.process(.text("odds for PSG?"), history: [], context: context))
+
+        let text = presenter.capturedRequests().first?.messages.first?.text ?? ""
+        #expect(text.contains("<user question>"))
+        #expect(text.contains("odds for PSG?"))
+        #expect(text.contains("<data to present>"))
+    }
+
+    @Test func dataOnlyPresenterInputOmitsTheQuestion() async throws {
+        let presenter = MockLLMClient([.textDelta("x"), .done(reason: .stop, usage: nil)])
+        let agent = GroundedAgent(
+            name: "sport", gatherer: gathererCalling("odds"), presenter: presenter,
+            tools: oddsProvider(), presenterInput: .dataOnly
+        )
+        _ = try await collect(agent.process(.text("odds for PSG?"), history: [], context: context))
+
+        let text = presenter.capturedRequests().first?.messages.first?.text ?? ""
+        #expect(!text.contains("<user question>"))
+        #expect(!text.contains("odds for PSG?"))
+        #expect(text.contains("<data to present>"))
     }
 
     @Test func widgetIsEmittedBeforeTheAnswerText() async throws {

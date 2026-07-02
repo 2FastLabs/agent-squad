@@ -76,8 +76,13 @@ import Testing
         // Verify that headers passed to SDKMCPClient actually reach the outgoing URLRequest.
         // Uses a URLProtocol stub to intercept the first POST without a real server.
         final class CapturingProtocol: URLProtocol, @unchecked Sendable {
-            // nonisolated(unsafe): intentional — single test, reset before use, no concurrent access.
-            nonisolated(unsafe) static var capturedRequest: URLRequest?
+            // Written from URLSession's queue, polled from the test — lock-guarded.
+            private static let lock = NSLock()
+            private nonisolated(unsafe) static var _capturedRequest: URLRequest?
+            static var capturedRequest: URLRequest? {
+                get { lock.withLock { _capturedRequest } }
+                set { lock.withLock { _capturedRequest = newValue } }
+            }
             override class func canInit(with request: URLRequest) -> Bool { true }
             override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
             override func startLoading() {
@@ -108,8 +113,13 @@ import Testing
             configuration: config
         )
 
-        // connect() will fail (no real MCP server), but the first POST will have been intercepted.
-        try? await client.connect()
+        // Don't await connect(): against the stub the SDK's handshake may never settle (no timeout),
+        // and we only need the first POST intercepted. Poll for the capture, then cancel.
+        let connect = Task { try? await client.connect() }
+        defer { connect.cancel() }
+        for _ in 0..<100 where CapturingProtocol.capturedRequest == nil {
+            try await Task.sleep(for: .milliseconds(50))
+        }
 
         let captured = try #require(CapturingProtocol.capturedRequest, "URLProtocol stub never intercepted a request")
         #expect(captured.value(forHTTPHeaderField: "X-Match-Id") == "42")

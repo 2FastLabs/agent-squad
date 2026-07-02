@@ -6,7 +6,7 @@ import CryptoKit
 /// conventions so backends render model + token usage richly.
 enum OTLPMapper {
     static let scopeName = "agent-squad"
-    static let scopeVersion = "0.1.0"
+    static let scopeVersion = AgentSquadInfo.version
 
     static func request(for batch: [TraceEvent], serviceName: String) -> OTLPExportRequest {
         OTLPExportRequest(resourceSpans: [

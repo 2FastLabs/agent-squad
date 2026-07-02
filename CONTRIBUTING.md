@@ -30,7 +30,10 @@ To send us a pull request, please:
 1. Fork the repository.
 2. Create a new branch to focus on the specific change you are contributing e.g. improv/lambda-agent
 3. Modify the source; please focus on the specific change you are contributing. If you also reformat all the code, it will be hard for us to focus on your change.
-4. Ensure local tests pass.
+4. Ensure local tests pass:
+   - **Python** — from `python/`: `pip install -r test_requirements.txt`, then `make code-quality` and `make test`.
+   - **TypeScript** — from `typescript/`: `npm install`, then `npm run lint` and `npm test`.
+   - **Swift** — from the repo root (where `Package.swift` lives): `swift build` and `swift test` (Swift 6.2 toolchain / Xcode 26+). Swift changes to public API or behaviour must come with matching updates to `swift/README.md` and `swift/SKILL.md`.
 5. Commit to your fork using clear commit messages.
 6. Send us a pull request, answering any default questions in the pull request interface.
 7. Pay attention to any automated CI failures reported in the pull request, and stay involved in the conversation.

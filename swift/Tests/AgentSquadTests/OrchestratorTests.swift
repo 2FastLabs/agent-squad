@@ -202,6 +202,20 @@ import Testing
         #expect(persisted.map(\.role) == [.user, .assistant, .user, .assistant])
     }
 
+    @Test func persistedTurnKeepsUserBeforeAssistantInTimestampOrderedViews() async throws {
+        // Regression: the user message must be stamped before the agent runs, or the reply's earlier
+        // mid-stream timestamp inverts the pair in the timestamp-sorted `fetchAllChats` merge.
+        let store = try store()
+        let orchestrator = Orchestrator(agents: [sportsAgent([.textDelta("a"), .done(reason: .stop, usage: nil)])], store: store)
+        _ = try await collect(orchestrator.route(.text("q1"), userId: "u", sessionId: "s"))
+        _ = try await collect(orchestrator.route(.text("q2"), userId: "u", sessionId: "s"))
+
+        let merged = try await store.fetchAllChats(userId: "u", sessionId: "s")
+        #expect(merged.map(\.role) == [.user, .assistant, .user, .assistant])
+        let pairs = zip(merged, merged.dropFirst())
+        #expect(pairs.allSatisfy { $0.timestamp <= $1.timestamp })
+    }
+
     @Test func createsRootTraceAndPassesSpanToTheAgent() async throws {
         let tracer = RecordingTracer()
         let orchestrator = Orchestrator(agents: [SpanReportingAgent()], store: try store(), tracer: tracer)

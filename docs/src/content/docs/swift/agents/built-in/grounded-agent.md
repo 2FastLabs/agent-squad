@@ -48,6 +48,7 @@ public init(
     curator: any ToolOutputCurator = .dataBlock,
     gathererPrompt: String? = nil,
     presenterPrompt: PresenterPrompt = .default,
+    presenterInput: PresenterInput = .questionAndData,
     ui: UIPolicy = .forward,
     maxToolRounds: Int = 20,
     saveChat: Bool = true
@@ -62,6 +63,7 @@ public init(
 | `curator` | Shapes the gathered results into the text feed. Default: `.dataBlock` (one `### toolName` section per call). |
 | `gathererPrompt` | Brain system prompt. Omit for a no-system-prompt Brain. |
 | `presenterPrompt` | Per-tool presenter prompts. Default: a generic "present only the data" instruction. |
+| `presenterInput` | What the Presenter sees besides its prompt. `.questionAndData` (default): this turn's question plus the curated feed, so it answers the user directly. `.dataOnly`: the feed alone — a pure explainer. It never sees chat history or the Brain's transcript in either mode. |
 | `ui` | `.forward` (default) emits a `.widget` event when the primary tool has a UI. `.suppress` folds everything into text. |
 | `maxToolRounds` | Cap on Brain tool-call iterations. Default: `20`. |
 
@@ -196,7 +198,7 @@ either as plain text or as text **plus an interactive UI widget** — the differ
 whether the primary tool advertises a [Tool UI](/agent-squad/swift/ui/overview/) (typically delivered from an
 [MCP](/agent-squad/swift/mcp/overview/) server) and what `ui:` is set to.
 
-![A shopping assistant answering the same question two ways: on the left, a grounded text reply plus a rich product-card widget rendered from an MCP UI payload; on the right, the same grounded reply as text only.](/agent-squad/swift/mock-compare.png)
+![A shopping assistant answering the same question two ways: on the left, a grounded text reply plus a rich product-card widget rendered from an MCP UI payload; on the right, the same grounded reply as text only.](/agent-squad/mock-compare.png)
 
 When the primary tool carries a UI payload and `ui: .forward` (the default), a `.widget` event
 is emitted *before* the Presenter streams its text — so the product card appears, then the

@@ -5,7 +5,7 @@ description: Surface MCP tool results as UI widgets alongside the reply, or fold
 
 When a tool returns a `UIPayload`, an agent can either emit it as an `AgentEvent.widget` (rendered next to the reply) or silently fold the data into the text answer. The choice is `UIPolicy`, set at agent construction time.
 
-![A shopping assistant answering the same question two ways: on the left, a text reply plus a rich product-card widget rendered from an MCP UI payload; on the right, the same reply as text only.](/agent-squad/swift/mock-compare.png)
+![A shopping assistant answering the same question two ways: on the left, a text reply plus a rich product-card widget rendered from an MCP UI payload; on the right, the same reply as text only.](/agent-squad/mock-compare.png)
 
 The same agent and the same tool data produce either of these. On the left, the tool's `UIPayload` — typically delivered from an [MCP](/agent-squad/swift/mcp/overview/) server — is emitted as a `.widget` event and the host renders the product card alongside the text. On the right, `UIPolicy.suppress` (or a tool with no UI) yields a text-only answer. The widget's `structuredContent` is render-only and is never fed back to the model.
 

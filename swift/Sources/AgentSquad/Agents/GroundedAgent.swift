@@ -15,6 +15,7 @@ public struct GroundedAgent: AgentProtocol {
     private let curator: any ToolOutputCurator
     private let gathererPrompt: String?
     private let presenterPrompt: PresenterPrompt
+    private let presenterInput: PresenterInput
     private let uiPolicy: UIPolicy
     private let toolRoundCap: Int
 
@@ -29,6 +30,7 @@ public struct GroundedAgent: AgentProtocol {
         curator: any ToolOutputCurator = .dataBlock,
         gathererPrompt: String? = nil,
         presenterPrompt: PresenterPrompt = .default,
+        presenterInput: PresenterInput = .questionAndData,
         ui: UIPolicy = .forward,
         maxToolRounds: Int = 20,
         saveChat: Bool = true
@@ -41,6 +43,7 @@ public struct GroundedAgent: AgentProtocol {
         self.curator = curator
         self.gathererPrompt = gathererPrompt
         self.presenterPrompt = presenterPrompt
+        self.presenterInput = presenterInput
         self.uiPolicy = ui
         self.toolRoundCap = maxToolRounds
         self.saveChat = saveChat
@@ -114,8 +117,9 @@ public struct GroundedAgent: AgentProtocol {
                 emit(.widget(payload))
             }
 
-            // 4. Present — the presenter has no tools and speaks only from history + question + feed,
-            //    so it cannot fetch or invent beyond what was gathered.
+            // 4. Present — the presenter is fully isolated: no tools, no chat history, no gatherer
+            //    transcript. It speaks only from the curated feed (plus the question, by mode), so it
+            //    cannot fetch or invent beyond what was gathered this turn.
             let presenterAgent = Agent(
                 name: "\(name).presenter", model: presenter, tools: nil,
                 systemPrompt: presenterPrompt.resolve(primaryTool: primary?.name), ui: .suppress, saveChat: false
@@ -123,9 +127,9 @@ public struct GroundedAgent: AgentProtocol {
             phaseSpan = context.span?.span("presenter", input: nil)
             let presenterContext = AgentContext(userId: context.userId, sessionId: context.sessionId, params: context.params, span: phaseSpan)
 
-            let presenterInput = AgentInput.text(Grounding.presenterMessage(question: question, data: feed))
+            let presenterMessage = AgentInput.text(Grounding.presenterMessage(question: question, data: feed, mode: presenterInput))
             var finalMessage: ConversationMessage?
-            for try await event in presenterAgent.process(presenterInput, history: history, context: presenterContext) {
+            for try await event in presenterAgent.process(presenterMessage, history: [], context: presenterContext) {
                 switch event {
                 case .textDelta(let delta): emit(.textDelta(delta))
                 case .final(let message): finalMessage = message

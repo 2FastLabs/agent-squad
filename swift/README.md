@@ -10,6 +10,10 @@
 
 > **Status: work in progress.** Built incrementally, one reviewed component at a time. The public
 > API is not yet stable.
+>
+> **Versioning:** until the first stable release, install with `branch: "main"` (as in the quick
+> start below). Swift releases will use bare semver tags (`0.1.0`, `0.2.0`, …) — the
+> `typescript_*`/`python_*` tags in this monorepo are not SwiftPM-resolvable.
 
 ## Requirements
 
@@ -71,6 +75,10 @@ Single-agent apps skip the classifier entirely — the orchestrator just runs yo
 A no-tool turn answers in one pass — the Brain replies directly, no Presenter. The same
 Brain → tool output → Presenter core also powers the realtime voice runtime.
 
+By default the Presenter also sees this turn's **question** (tagged separately from the data) so it
+can answer directly; pass `presenterInput: .dataOnly` for strict data-only presenting. It never
+sees the chat history or the Brain's transcript in either mode.
+
 ### The prompts
 
 The **Brain** runs one system prompt for all tools — role, the full tool catalog, and the rules for
@@ -115,7 +123,7 @@ the like) — you choose per agent. When a tool has a UI to show, the framework 
   <img src="../docs/public/mock-compare.png" width="560" alt="The same chat answer side by side: left, with a product-card widget plus a short line of grounded text; right, text only.">
 </p>
 
-→ How a tool UI flows through the agent: **[docs/tool-uis.md](docs/tool-uis.md)**.
+→ How a tool UI flows through the agent: **[the Tool UIs docs](../docs/src/content/docs/swift/ui/overview.md)**.
 
 ## Quick start
 
@@ -206,6 +214,7 @@ the integrations you need (each isolates its own dependencies):
 |---|---|---|---|
 | **`AgentSquad`** (core) | `import AgentSquad` | **nothing external** | protocols, agents, orchestrator, native tools (`ToolKit`, `Tool.local`/`.http`, `HTTPToolGroup`, `AggregateToolProvider`), `FileChatStorage`, `DeviceChatStorage` _(iOS 17+)_, `InMemoryChatStorage`, `OSLogTracer` |
 | **`AgentSquadMCP`** | `import AgentSquadMCP` | the official [MCP Swift SDK](https://github.com/modelcontextprotocol/swift-sdk) | `MCPServer` (alias of `MCPToolProvider`) — connect any MCP server with `MCPServer(url:)`, with MCP Apps UI support |
+| **`AgentSquadAudio`** | `import AgentSquadAudio` | AVFoundation (Apple platforms only) | `MicCapture` + `AudioPlayback` for the realtime voice runtime — requires `NSMicrophoneUsageDescription` in your Info.plist |
 
 So an app that doesn't use MCP never downloads the MCP SDK. Future optional integrations
 (e.g. `AgentSquadLangfuse` for trace export) follow the same pattern — the core never grows a

@@ -12,8 +12,8 @@ description: >-
 Protocol-driven, on-device multi-agent framework (Swift 6.2, iOS 16+ / macOS 14+; persistence via
 `FileChatStorage` on iOS 16+, `DeviceChatStorage` on iOS 17+). This is guidance and
 a map — **not an API reference**. Read the exact signatures from the source (`swift/Sources/AgentSquad/`)
-and the worked recipes from the docs (`swift/docs/`); this file tells you *what to use, when, and what
-to watch out for*.
+and the worked recipes from the docs site sources (`docs/src/content/docs/swift/`); this file tells
+you *what to use, when, and what to watch out for*.
 
 ## When to use what
 
@@ -61,7 +61,8 @@ stream. `.final` is what the orchestrator persists. Inputs/messages are value ty
 
 - **`Orchestrator`** drives a turn. The **classifier is optional** — omit it for a single agent.
 - **`Agent`** is one LLM with an internal tool loop. **`GroundedAgent`** is two LLMs (Brain + isolated
-  Presenter) for answers that must stay grounded in tool results.
+  Presenter) for answers that must stay grounded in tool results. The Presenter never sees chat
+  history or the Brain's transcript; `presenterInput` picks `.questionAndData` (default) or `.dataOnly`.
 - **`ChatCompletionsClient`** speaks the OpenAI wire — point its `baseURL` at OpenAI, Azure,
   OpenRouter, Groq, or a local Ollama/llama.cpp. Implement `LLMClient` for anything else.
 - **Tools** come from a `ToolProvider`. Built-ins: **`ToolKit`** holds native tools — `Tool.local`
@@ -80,19 +81,20 @@ stream. `.final` is what the orchestrator persists. Inputs/messages are value ty
 ## Custom implementations
 
 Conform to the protocol and pass your type where the built-in goes. Each seam has a worked example on
-its doc page (`/…/custom` or built-in); signatures live in `Sources/AgentSquad/`.
+its doc page (paths below are under `docs/src/content/docs/swift/`, published at `/agent-squad/swift/…`);
+signatures live in `Sources/AgentSquad/`.
 
 | Seam | Protocol | Source · doc |
 |---|---|---|
-| Agent | `AgentProtocol` | `Core/AgentProtocol.swift` · `/agents/custom` |
-| Classifier | `Classifier` (return an agent from the passed list, or `nil`) | `Core/Classifier/` · `/classifiers/custom` |
-| LLM client | `LLMClient` | `Core/LLMClient.swift` · `/llm/custom` |
-| Tools | `ToolProvider` | `Core/Tooling/` · `/tools/native` |
-| Tool-output curator | `ToolOutputCurator` (where you trim oversized output) | `Core/Presenter/` · `/grounding/curators` |
-| Presenter prompt | `PresenterPrompt` | `Core/Presenter/` · `/grounding/presenter-prompts` |
-| Storage | `ChatStorage` | `Core/Storage/` · `/storage/custom` |
-| Tracing | `TraceExporter` (easiest) / `SpanProcessor` / `Tracer` / `Redactor` | `Core/Tracing/` · `/tracing/custom` |
-| Realtime transport | `RealtimeTransport` | `Runtimes/Realtime/` · `/realtime/custom` |
+| Agent | `AgentProtocol` | `Core/AgentProtocol.swift` · `agents/custom` |
+| Classifier | `Classifier` (return an agent from the passed list, or `nil`) | `Core/Classifier/` · `classifiers/custom` |
+| LLM client | `LLMClient` | `Core/LLMClient.swift` · `llm/custom` |
+| Tools | `ToolProvider` | `Core/Tooling/` · `tools/custom` |
+| Tool-output curator | `ToolOutputCurator` (where you trim oversized output) | `Core/Presenter/` · `ui/built-in/curators` |
+| Presenter prompt | `PresenterPrompt` | `Core/Presenter/` · `agents/built-in/grounded-agent` |
+| Storage | `ChatStorage` | `Core/Storage/` · `storage/custom` |
+| Tracing | `TraceExporter` (easiest) / `SpanProcessor` / `Tracer` / `Redactor` | `Core/Tracing/` · `tracing/custom` |
+| Realtime transport | `RealtimeTransport` | `Runtimes/Realtime/` · `voice/custom` |
 
 ## Gotchas
 
@@ -114,9 +116,10 @@ its doc page (`/…/custom` or built-in); signatures live in `Sources/AgentSquad
 
 ## Go deeper
 
-- **Prose & recipes** — the Starlight docs in `swift/docs/` (`npm run dev`): `/general/quickstart`,
-  `/general/how-it-works`, `/agents/built-in/grounded-agent`, `/tools/mcp`, `/tools/tool-uis`,
-  `/storage/built-in/device`, `/tracing/built-in/otlp`, `/realtime/built-in/voice-assistant`,
-  `/realtime/built-in/grounded`, `/guides/*`.
+- **Prose & recipes** — the Starlight docs under `docs/src/content/docs/swift/` (run the site from
+  `docs/` with `npm run dev`): `quick-start`, `orchestrator/overview`,
+  `agents/built-in/grounded-agent`, `mcp/overview`, `ui/overview`, `storage/built-in/device`,
+  `tracing/built-in/otlp-exporter`, `voice/built-in/openai-voice`,
+  `voice/built-in/openai-grounded-voice`, `guides/*`.
 - **Exact signatures** — `swift/Sources/AgentSquad/` (`Core/`, `Agents/`, `Core/LLM/`,
   `Core/Tooling/`, `Core/Tracing/`, `Runtimes/Realtime/`).

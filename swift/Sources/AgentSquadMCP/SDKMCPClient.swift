@@ -22,7 +22,7 @@ public actor SDKMCPClient: MCPClient {
     /// Default handshake identity, shared with `MCPServer`'s convenience initializers so the two
     /// construction paths never drift apart.
     public static let defaultClientName = "AgentSquad"
-    public static let defaultClientVersion = "0.1.0"
+    public static let defaultClientVersion = AgentSquadInfo.version
 
     public init(
         endpoint: URL,

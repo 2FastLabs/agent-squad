@@ -19,16 +19,20 @@ enum Grounding {
         calls.last(where: { $0.result.ui != nil }) ?? calls.last
     }
 
-    /// The presenter's user message: question and curated data, tagged so the model can tell them
-    /// apart.
-    static func presenterMessage(question: String, data: String) -> String {
-        """
-        <user question>
-        \(question)
-        </user question>
+    /// The presenter's user message: curated data, tagged — preceded by the question when the
+    /// `PresenterInput` mode includes it, so the model can tell the two apart.
+    static func presenterMessage(question: String, data: String, mode: PresenterInput) -> String {
+        let dataBlock = """
         <data to present>
         \(data)
         </data to present>
+        """
+        guard case .questionAndData = mode else { return dataBlock }
+        return """
+        <user question>
+        \(question)
+        </user question>
+        \(dataBlock)
         """
     }
 }

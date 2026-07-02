@@ -68,6 +68,9 @@ public struct Orchestrator: Sendable {
         do {
             let agent = try await selectAgent(input, userId: userId, sessionId: sessionId)
             let history = try await store.fetch(userId: userId, sessionId: sessionId, agentId: agent.id, maxMessages: maxMessages)
+            // Stamped before the agent runs so timestamp-ordered views (`fetchAllChats`) keep
+            // user → assistant order; the reply's message is created later, mid-stream.
+            let userMessage = ConversationMessage(role: .user, text: input.text)
 
             let span = root.span("agent.\(agent.id)", input: nil)
             agentSpan = span
@@ -88,7 +91,6 @@ public struct Orchestrator: Sendable {
             // user message. A failure here is post-answer: record it on the trace but don't emit
             // `.error`, since the user already got their reply.
             if let finalMessage, agent.saveChat {
-                let userMessage = ConversationMessage(role: .user, text: input.text)
                 do {
                     try await store.saveMessages(
                         [userMessage, finalMessage],

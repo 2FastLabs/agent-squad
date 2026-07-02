@@ -50,6 +50,7 @@ public actor OpenAIGroundedVoiceAssistant: VoiceAssistant {
 | `modality` | `RealtimeModality()` (speech in / audio out) | Controls the event mix; see [Voice overview](/agent-squad/swift/voice/overview/) |
 | `curator` | `.dataBlock` | Shapes tool output fed to the presenter; see [UI overview](/agent-squad/swift/ui/overview/) |
 | `presenterPrompt` | `.default` | Prompt wrapper injected before the curated data block |
+| `presenterInput` | `.questionAndData` | What the presenter sees besides its prompt: the question plus the curated feed (default), or `.dataOnly` for the feed alone |
 | `agentInstructions` | `defaultAgentInstructions` | System prompt for the gatherer — instructs it to call tools and not speak |
 | `directInstructions` | `defaultDirectInstructions` | System prompt for the direct-response path (no tools called) |
 | `model` | `"gpt-realtime"` | Passed as the `?model=` query parameter by the transport |
