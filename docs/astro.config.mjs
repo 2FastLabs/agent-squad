@@ -109,6 +109,7 @@ export default defineConfig({
 									label: 'Built-in retrievers',
 									items: [
 										{ label: 'Bedrock Knowledge Base', link: '/retrievers/built-in/bedrock-kb-retriever' },
+											{ label: 'Dakera', link: '/retrievers/built-in/dakera-retriever' },
 									]
 								},
 								  { label: 'Custom Retriever', link: '/retrievers/custom-retriever' },
