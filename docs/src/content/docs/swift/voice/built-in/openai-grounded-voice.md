@@ -77,7 +77,7 @@ let assistant = OpenAIGroundedVoiceAssistant(
     name: "Sport", transport: transport, tools: tools,
     userId: "u1", sessionId: "s1",
     transcriptionModel: "gpt-4o-transcribe",             // better STT accuracy, higher cost
-    turnDetection: .semanticVAD(eagerness: .low),        // let the user pause mid-thought
+    turnDetection: .serverVAD(silenceDurationMs: 500),   // idle_timeout_ms below only applies to server_vad
     sessionOverrides: [
         "audio": .object(["input": .object([
             "noise_reduction": .object(["type": .string("near_field")]),
