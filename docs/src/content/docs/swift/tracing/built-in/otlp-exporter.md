@@ -139,7 +139,7 @@ let tracer = ProcessingTracer(
 
 `OTLPExporter` doesn't care whether the URL is a backend or your own proxy — it POSTs the same OTLP/HTTP JSON either way, so no custom `TraceExporter` is needed. What your endpoint receives and how it should behave:
 
-- **`POST <your-url>/v1/traces`**, `Content-Type: application/json`, body is an OTLP `ExportTraceServiceRequest`. It must return **2xx** or the batch is dropped (there is no retry — see [Error handling](#error-handling)).
+- **`POST` to the configured `endpoint`** (in the example above, `/v1/traces`), `Content-Type: application/json`, body is an OTLP `ExportTraceServiceRequest`. It must return **2xx** or the batch is dropped (there is no retry — see [Error handling](#error-handling)).
 - **When it fires:** background, fire-and-forget — a batch is POSTed when `batchSize` spans accumulate or on `flush()`. Spans ship **as each one ends**, so a trace arrives across multiple POSTs and out of causal order (children before their parent root). Stitch by `traceId` + `parentSpanId` and tolerate late/orphan spans.
 - **What it can do:** at minimum, forward the body verbatim to the real backend with the backend's auth header added. It may also redact `gen_ai.prompt`/`gen_ai.completion`, route to different projects per user/env, buffer and retry, or fan out to another OTLP backend. An off-the-shelf [OpenTelemetry Collector](https://opentelemetry.io/docs/collector/) does the forward-and-inject case with no custom code.
 - **Payload notes (standard OTLP/JSON):** `intValue` fields are strings (`"1200"`), timestamps are string nanoseconds, `parentSpanId` is omitted (not null) on roots, and `status.code` is `0` (unset/ok) or `2` (error).
