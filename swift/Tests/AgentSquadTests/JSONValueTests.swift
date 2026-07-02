@@ -60,4 +60,21 @@ import Testing
         let big = try JSONDecoder().decode(JSONValue.self, from: Data("9999999999999999999999".utf8))
         if case .double = big {} else { Issue.record("expected .double for an out-of-Int integer") }
     }
+
+    @Test func deepMergingMergesObjectsAndReplacesEverythingElse() {
+        let base: JSONValue = ["a": ["x": 1, "y": 2], "keep": true, "list": [1, 2]]
+        let merged = base.deepMerging(["a": ["y": 9, "z": 3], "list": [7], "new": "v"])
+        #expect(merged["a"]?["x"] == .int(1))          // untouched nested key survives
+        #expect(merged["a"]?["y"] == .int(9))          // nested override wins
+        #expect(merged["a"]?["z"] == .int(3))          // nested addition lands
+        #expect(merged["keep"] == .bool(true))         // untouched sibling survives
+        #expect(merged["list"] == .array([.int(7)]))   // arrays replace, never merge
+        #expect(merged["new"] == .string("v"))
+    }
+
+    @Test func deepMergingReplacesOnTypeMismatch() {
+        let base: JSONValue = ["a": ["x": 1]]
+        #expect(base.deepMerging(["a": "flat"]) == .object(["a": .string("flat")]))
+        #expect(JSONValue.string("s").deepMerging(["a": 1]) == .object(["a": .int(1)]))
+    }
 }

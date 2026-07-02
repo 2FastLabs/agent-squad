@@ -31,6 +31,24 @@ public struct RealtimeModality: Sendable, Equatable {
     }
 }
 
+/// How the server decides the user's turn has ended (the session's `turn_detection`).
+public enum RealtimeTurnDetection: Sendable, Equatable {
+    /// Model-based end-of-turn detection (the default). `eagerness` trades latency against letting
+    /// the user pause mid-thought: `.high` replies sooner, `.low` waits longer; `nil` leaves the
+    /// server default (`auto`).
+    case semanticVAD(eagerness: Eagerness? = nil)
+    /// Silence-based detection with tunable thresholds; `nil` fields keep the server defaults.
+    case serverVAD(threshold: Double? = nil, prefixPaddingMs: Int? = nil, silenceDurationMs: Int? = nil)
+    /// No automatic turns — only for text-driven sessions (`sendText`, which creates its response
+    /// explicitly). Spoken push-to-talk would additionally need a buffer-commit API the framework
+    /// doesn't expose yet; with speech input this leaves the session inert.
+    case disabled
+
+    public enum Eagerness: String, Sendable {
+        case low, medium, high, auto
+    }
+}
+
 /// An event from a realtime voice session. Its **own** type, deliberately not `AgentEvent`:
 /// continuous audio, server-driven turn boundaries and barge-in don't fit the turn-based contract.
 /// Errors arrive in-band as `.error`, so the stream is non-throwing.

@@ -13,13 +13,17 @@ enum RealtimeWire {
     /// `session.update` — sent once at connect. `agentOutput` sets the agent turn's modality at the
     /// session level: `.text` (the grounded gatherer — never speaks; audio comes from a per-response
     /// presenter) or `.audio` (the primitive — the agent turn itself speaks). VAD auto-creates the
-    /// agent response on speech end.
+    /// agent response on speech end. `overrides` deep-merges into the generated `session` object
+    /// last — the escape hatch for keys this signature doesn't model (noise reduction, idle timeout, …).
     static func sessionUpdate(
         model: String, instructions: String, voice: String,
         language: String?, tools: [AgentTool], sampleRate: Int,
-        agentOutput: RealtimeModality.Output = .text
+        agentOutput: RealtimeModality.Output = .text,
+        transcriptionModel: String = "gpt-4o-mini-transcribe",
+        turnDetection: RealtimeTurnDetection = .semanticVAD(),
+        overrides: [String: JSONValue] = [:]
     ) -> String {
-        var transcription: [String: JSONValue] = ["model": .string("gpt-4o-mini-transcribe")]
+        var transcription: [String: JSONValue] = ["model": .string(transcriptionModel)]
         if let language { transcription["language"] = .string(language) }
 
         let agentModality: JSONValue = agentOutput == .text ? .string("text") : .string("audio")
@@ -32,7 +36,7 @@ enum RealtimeWire {
                 "input": .object([
                     "format": .object(["type": .string(audioMimeType), "rate": .int(sampleRate)]),
                     "transcription": .object(transcription),
-                    "turn_detection": .object(["type": .string("semantic_vad"), "create_response": .bool(true)]),
+                    "turn_detection": turnDetectionValue(turnDetection),
                 ]),
                 "output": .object([
                     "format": .object(["type": .string(audioMimeType), "rate": .int(sampleRate)]),
@@ -44,7 +48,10 @@ enum RealtimeWire {
             session["tools"] = .array(tools.map(functionSchema))
             session["tool_choice"] = .string("auto")
         }
-        return frame(["type": .string("session.update"), "session": .object(session)])
+        let merged = overrides.isEmpty
+            ? JSONValue.object(session)
+            : JSONValue.object(session).deepMerging(.object(overrides))
+        return frame(["type": .string("session.update"), "session": merged])
     }
 
     static func appendAudio(_ base64: String) -> String {
@@ -143,6 +150,25 @@ enum RealtimeWire {
     }
 
     // MARK: - Internals
+
+    /// `create_response: true` is deliberate on both VAD types — the session's turn brain relies on
+    /// the server opening the agent response; `.disabled` maps to JSON `null` (manual turns only).
+    private static func turnDetectionValue(_ turnDetection: RealtimeTurnDetection) -> JSONValue {
+        switch turnDetection {
+        case .semanticVAD(let eagerness):
+            var config: [String: JSONValue] = ["type": .string("semantic_vad"), "create_response": .bool(true)]
+            if let eagerness { config["eagerness"] = .string(eagerness.rawValue) }
+            return .object(config)
+        case .serverVAD(let threshold, let prefixPaddingMs, let silenceDurationMs):
+            var config: [String: JSONValue] = ["type": .string("server_vad"), "create_response": .bool(true)]
+            if let threshold { config["threshold"] = .double(threshold) }
+            if let prefixPaddingMs { config["prefix_padding_ms"] = .int(prefixPaddingMs) }
+            if let silenceDurationMs { config["silence_duration_ms"] = .int(silenceDurationMs) }
+            return .object(config)
+        case .disabled:
+            return .null
+        }
+    }
 
     private static func responseModalities(_ output: RealtimeModality.Output, voice: String) -> [String: JSONValue] {
         switch output {

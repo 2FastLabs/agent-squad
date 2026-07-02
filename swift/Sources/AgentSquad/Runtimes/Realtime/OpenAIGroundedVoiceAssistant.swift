@@ -30,6 +30,9 @@ public actor OpenAIGroundedVoiceAssistant: OpenAIRealtimeSession, VoiceAssistant
     nonisolated let voice: String
     nonisolated let language: String?
     nonisolated let sampleRate: Int
+    private let transcriptionModel: String
+    private let turnDetection: RealtimeTurnDetection
+    private let sessionOverrides: [String: JSONValue]
 
     // Per-turn state (cleared by `resetTurn`).
     private var toolResults: [CapturedCall] = []
@@ -69,7 +72,10 @@ public actor OpenAIGroundedVoiceAssistant: OpenAIRealtimeSession, VoiceAssistant
         model: String = "gpt-realtime",
         voice: String = "marin",
         language: String? = nil,
-        sampleRate: Int = 24_000
+        sampleRate: Int = 24_000,
+        transcriptionModel: String = "gpt-4o-mini-transcribe",
+        turnDetection: RealtimeTurnDetection = .semanticVAD(),
+        sessionOverrides: [String: JSONValue] = [:]
     ) {
         self.name = name
         self.transport = transport
@@ -89,6 +95,9 @@ public actor OpenAIGroundedVoiceAssistant: OpenAIRealtimeSession, VoiceAssistant
         self.voice = voice
         self.language = language
         self.sampleRate = sampleRate
+        self.transcriptionModel = transcriptionModel
+        self.turnDetection = turnDetection
+        self.sessionOverrides = sessionOverrides
         (self.events, self.continuation) = AsyncStream.makeStream(of: RealtimeEvent.self)
     }
 
@@ -105,7 +114,8 @@ public actor OpenAIGroundedVoiceAssistant: OpenAIRealtimeSession, VoiceAssistant
     func sessionUpdateFrame(tools: [AgentTool]) -> String {
         RealtimeWire.sessionUpdate(
             model: model, instructions: agentInstructions, voice: voice,
-            language: language, tools: tools, sampleRate: sampleRate
+            language: language, tools: tools, sampleRate: sampleRate,
+            transcriptionModel: transcriptionModel, turnDetection: turnDetection, overrides: sessionOverrides
         )
     }
 

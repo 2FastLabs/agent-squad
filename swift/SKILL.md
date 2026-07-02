@@ -76,6 +76,10 @@ stream. `.final` is what the orchestrator persists. Inputs/messages are value ty
   directly) and `OpenAIGroundedVoiceAssistant` (grounded Brain → Presenter). Both are self-sufficient
   (own `tracer`/`store`/`userId`/`sessionId`; with a `store`, completed turns persist and prior
   history seeds on `start()`), wired to the mic/speaker by `RealtimeRuntime` with `MicCapture`/`AudioPlayback`.
+  Session tuning on both: `transcriptionModel` (the user's STT only), `turnDetection`
+  (`.semanticVAD(eagerness:)` / `.serverVAD(threshold:…)` / `.disabled`), and `sessionOverrides`
+  (deep-merged into the generated `session.update` last — the escape hatch for unmodeled keys like
+  `audio.input.noise_reduction`).
 
 ## Custom implementations
 

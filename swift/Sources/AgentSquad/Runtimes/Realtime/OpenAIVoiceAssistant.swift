@@ -28,6 +28,9 @@ public actor OpenAIVoiceAssistant: OpenAIRealtimeSession, VoiceAssistant {
     nonisolated let voice: String
     nonisolated let language: String?
     nonisolated let sampleRate: Int
+    private let transcriptionModel: String
+    private let turnDetection: RealtimeTurnDetection
+    private let sessionOverrides: [String: JSONValue]
 
     // Per-turn state (cleared by `resetTurn`).
     private var userText = ""
@@ -64,7 +67,10 @@ public actor OpenAIVoiceAssistant: OpenAIRealtimeSession, VoiceAssistant {
         model: String = "gpt-realtime",
         voice: String = "marin",
         language: String? = nil,
-        sampleRate: Int = 24_000
+        sampleRate: Int = 24_000,
+        transcriptionModel: String = "gpt-4o-mini-transcribe",
+        turnDetection: RealtimeTurnDetection = .semanticVAD(),
+        sessionOverrides: [String: JSONValue] = [:]
     ) {
         self.name = name
         self.transport = transport
@@ -81,6 +87,9 @@ public actor OpenAIVoiceAssistant: OpenAIRealtimeSession, VoiceAssistant {
         self.voice = voice
         self.language = language
         self.sampleRate = sampleRate
+        self.transcriptionModel = transcriptionModel
+        self.turnDetection = turnDetection
+        self.sessionOverrides = sessionOverrides
         (self.events, self.continuation) = AsyncStream.makeStream(of: RealtimeEvent.self)
     }
 
@@ -98,7 +107,8 @@ public actor OpenAIVoiceAssistant: OpenAIRealtimeSession, VoiceAssistant {
         // The agent turn speaks: its session-level output modality matches ours (audio / text).
         RealtimeWire.sessionUpdate(
             model: model, instructions: instructions, voice: voice,
-            language: language, tools: tools, sampleRate: sampleRate, agentOutput: modality.output
+            language: language, tools: tools, sampleRate: sampleRate, agentOutput: modality.output,
+            transcriptionModel: transcriptionModel, turnDetection: turnDetection, overrides: sessionOverrides
         )
     }
 

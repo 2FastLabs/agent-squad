@@ -118,4 +118,15 @@ extension JSONValue {
         default: return nil
         }
     }
+
+    /// Deep-merge `override` into `self`: objects merge key-by-key recursively, everything else
+    /// (scalars, arrays, mismatched types) is replaced by the override.
+    func deepMerging(_ override: JSONValue) -> JSONValue {
+        guard case .object(let base) = self, case .object(let patch) = override else { return override }
+        var merged = base
+        for (key, value) in patch {
+            merged[key] = base[key].map { $0.deepMerging(value) } ?? value
+        }
+        return .object(merged)
+    }
 }

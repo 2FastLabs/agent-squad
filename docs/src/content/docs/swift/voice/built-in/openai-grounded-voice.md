@@ -29,7 +29,10 @@ public actor OpenAIGroundedVoiceAssistant: VoiceAssistant {
         model: String = "gpt-realtime",
         voice: String = "marin",
         language: String? = nil,
-        sampleRate: Int = 24_000
+        sampleRate: Int = 24_000,
+        transcriptionModel: String = "gpt-4o-mini-transcribe",
+        turnDetection: RealtimeTurnDetection = .semanticVAD(),
+        sessionOverrides: [String: JSONValue] = [:]
     )
 }
 ```
@@ -56,6 +59,47 @@ public actor OpenAIGroundedVoiceAssistant: VoiceAssistant {
 | `voice` | `"marin"` | OpenAI Realtime voice name |
 | `language` | `nil` | BCP-47 language code; `nil` lets the model auto-detect |
 | `sampleRate` | `24_000` | PCM16 sample rate; must match `AudioInput`/`AudioOutput` |
+| `transcriptionModel` | `"gpt-4o-mini-transcribe"` | Speech-to-text model for the *user's* transcript (captions + persisted user turns); e.g. `"gpt-4o-transcribe"` for better accuracy at higher cost. Does not affect the gatherer or presenter |
+| `turnDetection` | `.semanticVAD()` | When the server ends the user's turn: `.semanticVAD(eagerness: .low/.medium/.high/.auto)` to trade patience vs latency, `.serverVAD(threshold:prefixPaddingMs:silenceDurationMs:)` for silence-based detection, `.disabled` for text-driven sessions only (`sendText`; spoken turns need VAD) |
+| `sessionOverrides` | `[:]` | Escape hatch: deep-merged into the generated `session.update` object last — set any session key the parameters above don't model (e.g. `audio.input.noise_reduction`). Nested objects merge; scalars and arrays replace |
+
+---
+
+## Session tuning
+
+Session config is layered: **typed parameters** for the everyday knobs, and **`sessionOverrides`** as
+the forward-compatibility valve. Overrides are an arbitrary JSON object deep-merged into the
+generated `session` payload *last*, so when OpenAI ships a new session parameter you can set it from
+your app immediately — no AgentSquad release needed:
+
+```swift
+let assistant = OpenAIGroundedVoiceAssistant(
+    name: "Sport", transport: transport, tools: tools,
+    userId: "u1", sessionId: "s1",
+    transcriptionModel: "gpt-4o-transcribe",             // better STT accuracy, higher cost
+    turnDetection: .semanticVAD(eagerness: .low),        // let the user pause mid-thought
+    sessionOverrides: [
+        "audio": .object(["input": .object([
+            "noise_reduction": .object(["type": .string("near_field")]),
+            "turn_detection": .object(["idle_timeout_ms": .int(6_000)]),   // key not (yet) modeled — just set it
+        ])]),
+        "max_output_tokens": .int(512),
+    ]
+)
+```
+
+Merge rules:
+
+- **Any key you set wins**, including generated ones (`instructions`, `output_modalities`, the
+  transcription model, …) — you can effectively author the whole session config yourself.
+- **Keys you don't set keep their generated values** — objects merge key-by-key, so overriding
+  `audio.input.noise_reduction` doesn't clobber `audio.input.format` or `transcription`.
+- **Clear a key** by setting it to `.null` (the Realtime API's way of disabling things, e.g.
+  `turn_detection`); keys can be nulled but never removed from the payload.
+- Overrides patch the **`session.update` frame only** — the presenter and direct replies ride
+  per-response `response.create` frames, deliberately out of reach, so an override can't corrupt
+  the grounded turn machinery. Their prompts are the `presenterPrompt` / `directInstructions`
+  parameters instead.
 
 ---
 

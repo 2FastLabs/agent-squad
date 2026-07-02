@@ -26,6 +26,77 @@ import Testing
         let tools = try #require(session["tools"] as? [[String: Any]])
         #expect(tools.first?["name"] as? String == "odds")            // flat function shape
         #expect(session["tool_choice"] as? String == "auto")
+        #expect(((input["transcription"] as? [String: Any])?["model"]) as? String == "gpt-4o-mini-transcribe")
+        #expect(((input["turn_detection"] as? [String: Any])?["eagerness"]) == nil)   // server default when unset
+    }
+
+    private func inputSection(_ json: String) throws -> [String: Any] {
+        let session = try #require(try object(json)["session"] as? [String: Any])
+        let audio = try #require(session["audio"] as? [String: Any])
+        return try #require(audio["input"] as? [String: Any])
+    }
+
+    @Test func sessionUpdateSemanticVADEagerness() throws {
+        let json = RealtimeWire.sessionUpdate(
+            model: "m", instructions: "i", voice: "v", language: nil, tools: [], sampleRate: 24_000,
+            turnDetection: .semanticVAD(eagerness: .low)
+        )
+        let vad = try #require(try inputSection(json)["turn_detection"] as? [String: Any])
+        #expect(vad["type"] as? String == "semantic_vad")
+        #expect(vad["eagerness"] as? String == "low")
+        #expect(vad["create_response"] as? Bool == true)
+    }
+
+    @Test func sessionUpdateServerVAD() throws {
+        let json = RealtimeWire.sessionUpdate(
+            model: "m", instructions: "i", voice: "v", language: nil, tools: [], sampleRate: 24_000,
+            turnDetection: .serverVAD(threshold: 0.6, prefixPaddingMs: 300, silenceDurationMs: 500)
+        )
+        let vad = try #require(try inputSection(json)["turn_detection"] as? [String: Any])
+        #expect(vad["type"] as? String == "server_vad")
+        #expect(vad["threshold"] as? Double == 0.6)
+        #expect(vad["prefix_padding_ms"] as? Int == 300)
+        #expect(vad["silence_duration_ms"] as? Int == 500)
+    }
+
+    @Test func sessionUpdateDisabledTurnDetectionIsJSONNull() throws {
+        let json = RealtimeWire.sessionUpdate(
+            model: "m", instructions: "i", voice: "v", language: nil, tools: [], sampleRate: 24_000,
+            turnDetection: .disabled
+        )
+        #expect(try inputSection(json)["turn_detection"] is NSNull)
+    }
+
+    @Test func sessionUpdateCustomTranscriptionModel() throws {
+        let json = RealtimeWire.sessionUpdate(
+            model: "m", instructions: "i", voice: "v", language: nil, tools: [], sampleRate: 24_000,
+            transcriptionModel: "gpt-4o-transcribe"
+        )
+        #expect(((try inputSection(json)["transcription"] as? [String: Any])?["model"]) as? String == "gpt-4o-transcribe")
+    }
+
+    @Test func sessionUpdateOverridesDeepMergeIntoSession() throws {
+        // Overrides add keys the signature doesn't model and win over generated ones — without
+        // clobbering the siblings of the objects they touch.
+        let json = RealtimeWire.sessionUpdate(
+            model: "m", instructions: "i", voice: "v", language: "fr", tools: [], sampleRate: 24_000,
+            overrides: [
+                "audio": .object(["input": .object([
+                    "noise_reduction": .object(["type": .string("near_field")]),
+                    "transcription": .object(["model": .string("whisper-1")]),
+                ])]),
+                "max_output_tokens": .int(512),
+            ]
+        )
+        let session = try #require(try object(json)["session"] as? [String: Any])
+        #expect(session["max_output_tokens"] as? Int == 512)                       // added at top level
+        let input = try inputSection(json)
+        #expect((input["noise_reduction"] as? [String: Any])?["type"] as? String == "near_field")   // added nested
+        let transcription = try #require(input["transcription"] as? [String: Any])
+        #expect(transcription["model"] as? String == "whisper-1")                  // override wins
+        #expect(transcription["language"] as? String == "fr")                      // sibling preserved
+        #expect(input["format"] != nil)                                            // untouched siblings survive
+        #expect((session["audio"] as? [String: Any])?["output"] != nil)
     }
 
     @Test func presenterResponseIsOutOfBandWithCuratedInput() throws {
