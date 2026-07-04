@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/2fastlabs-agent-squad-badge.png)](https://mseep.ai/app/2fastlabs-agent-squad)
+
 <h2 align="center">Agent Squad</h2>
 <p align="center">Flexible, lightweight open-source framework for orchestrating multiple AI agents — in the cloud with Python and TypeScript, and now <strong>on device</strong> with Swift.</p>
 
