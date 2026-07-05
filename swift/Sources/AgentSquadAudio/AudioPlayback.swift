@@ -71,12 +71,7 @@ public final class AudioPlayback: AudioOutput, @unchecked Sendable {
     }
 
     private func makeBuffer(_ data: Data) -> AVAudioPCMBuffer? {
-        let samples = Self.floatSamples(fromPCM16: data)
-        guard !samples.isEmpty, let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(samples.count)) else { return nil }
-        buffer.frameLength = AVAudioFrameCount(samples.count)
-        let channel = buffer.floatChannelData![0]
-        for i in samples.indices { channel[i] = samples[i] }
-        return buffer
+        PCM16.floatBuffer(fromPCM16: data, format: format)
     }
 
     /// PCM16 little-endian mono bytes → float32 samples in `[-1, 1]`. Pure (no engine) so the

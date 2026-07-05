@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 import Testing
 
@@ -46,6 +47,31 @@ import AgentSquad
     @Test func audioPlaybackConstructsAcrossConfigurations() {
         _ = AudioPlayback(sessionPolicy: .external)
         _ = AudioPlayback(sessionPolicy: .managed, configureEngine: { _ in })
+    }
+
+    @Test func voiceProcessedAudioIOServesBothRoles() {
+        let io = VoiceProcessedAudioIO()
+        let input: any AudioInput = io
+        let output: any AudioOutput = io
+        _ = input.frames
+        _ = output
+        _ = VoiceProcessedAudioIO(voiceProcessing: .init(duckingLevel: .min), sessionPolicy: .external, configureEngine: { _ in })
+    }
+
+    @Test func voiceProcessedAudioIOIsInertBeforeStart() async {
+        // enqueue/flush/stop before start must be safe no-ops (the runtime can race teardown).
+        let io = VoiceProcessedAudioIO()
+        await io.enqueue(Data([0x00, 0x00]))
+        await io.flush()
+        await io.stop()
+    }
+
+    @Test func pcm16FloatBufferMatchesFloatSamples() {
+        let format = AVAudioFormat(standardFormatWithSampleRate: 24_000, channels: 1)!
+        let buffer = PCM16.floatBuffer(fromPCM16: Data([0x00, 0x00, 0xFF, 0x7F, 0x00, 0x80]), format: format)
+        #expect(buffer?.frameLength == 3)
+        #expect(buffer?.floatChannelData?[0][2] == -1.0)
+        #expect(PCM16.floatBuffer(fromPCM16: Data(), format: format) == nil)
     }
 
     @Test func pcm16ToFloatScalingAndEndianness() {

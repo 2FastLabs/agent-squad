@@ -33,7 +33,7 @@ Every component is a `Sendable` protocol with one built-in implementation — sw
 |---|---|---|
 | `AgentSquad` | nothing external | protocols, `Agent`, `GroundedAgent`, `Orchestrator`, `LLMClassifier`, `ChatCompletionsClient`, `FileChatStorage`, `DeviceChatStorage`, `InMemoryChatStorage`, `OSLogTracer`, OTLP export |
 | `AgentSquadMCP` | MCP Swift SDK | `MCPServer` (= `MCPToolProvider`), `SDKMCPClient` |
-| `AgentSquadAudio` | AVFoundation | `MicCapture` (voice-processed/AEC by default), `AudioPlayback`, `VoiceProcessing`, `AudioSessionPolicy` (needs `NSMicrophoneUsageDescription`) |
+| `AgentSquadAudio` | AVFoundation | `VoiceProcessedAudioIO` (capture+playback, one engine, AEC — the recommended wiring), `MicCapture` (voice-processed/AEC by default), `AudioPlayback`, `VoiceProcessing`, `AudioSessionPolicy` (needs `NSMicrophoneUsageDescription`) |
 
 SwiftPM: `.package(url: "https://github.com/2FastLabs/agent-squad", branch: "main")`.
 
@@ -76,10 +76,13 @@ stream. `.final` is what the orchestrator persists. Inputs/messages are value ty
 - **Voice**: two `VoiceAssistant`s over a WebSocket — `OpenAIVoiceAssistant` (single LLM, speaks
   directly) and `OpenAIGroundedVoiceAssistant` (grounded Brain → Presenter). Both are self-sufficient
   (own `tracer`/`store`/`userId`/`sessionId`; with a `store`, completed turns persist and prior
-  history seeds on `start()`), wired to the mic/speaker by `RealtimeRuntime` with `MicCapture`/`AudioPlayback`.
-  `MicCapture` captures through Apple's Voice-Processing I/O unit by default (echo cancellation,
-  noise suppression, AGC — tune via `voiceProcessing:`, or pass `nil` for raw capture); both audio
-  classes take an `AudioSessionPolicy` (`.managed` / `.custom` / `.external` for apps that own the
+  history seeds on `start()`), wired to the mic/speaker by `RealtimeRuntime`. Preferred audio
+  wiring: ONE `VoiceProcessedAudioIO` instance passed as both `input:` and `output:` — capture and
+  playback share one voice-processed `AVAudioEngine`, so the assistant's audio is guaranteed to be
+  in the echo canceller's reference path. The split `MicCapture`/`AudioPlayback` pair also works
+  (capture is voice-processed by default; the AEC reference is then device-level/route-dependent;
+  `MicCapture(voiceProcessing: nil)` = raw capture). All three audio classes take an
+  `AudioSessionPolicy` (`.managed` / `.custom` / `.external` for apps that own the
   `AVAudioSession`) and a `configureEngine` hook exposing the raw `AVAudioEngine`.
   Session tuning on both: `transcriptionModel` (the user's STT only), `turnDetection`
   (`.semanticVAD(eagerness:)` / `.serverVAD(threshold:…)` / `.disabled`), and `sessionOverrides`
@@ -121,12 +124,14 @@ signatures live in `Sources/AgentSquad/`.
   pattern-scrub PII — supply a custom `Redactor` for that.
 - **Realtime** is a peer runtime, not an agent; its `events` stream is non-throwing; needs
   `NSMicrophoneUsageDescription`; always `stop()`.
-- **Voice processing (AEC)**: on by default in `MicCapture`; if it can't be enabled `start()`
-  throws `.voiceProcessingUnavailable` (degrade deliberately with `voiceProcessing: nil`). The
+- **Voice processing (AEC)**: on by default; if it can't be enabled `start()` throws
+  `.voiceProcessingUnavailable` (degrade deliberately with `MicCapture(voiceProcessing: nil)`).
+  For guaranteed echo cancellation use `VoiceProcessedAudioIO` and pass the **same instance** as
+  input and output (its `start()`/`stop()` are idempotent — the runtime calls each twice). The
   simulator does **no** AEC — validate on a device. VP quiets the speaker (counter with
-  `duckingLevel: .min`); never enable VP on the playback engine. With `sessionPolicy: .external`
-  the app must configure **and activate** its `AVAudioSession` before `start()`, and should pass
-  the same policy to both `MicCapture` and `AudioPlayback`.
+  `duckingLevel: .min`); never enable VP on a playback-only engine. With
+  `sessionPolicy: .external` the app must configure **and activate** its `AVAudioSession` before
+  `start()`, and should use the same policy everywhere.
 - **`ContentPart` Codable** keys off case + label names — renaming breaks stored history.
 
 ## Go deeper

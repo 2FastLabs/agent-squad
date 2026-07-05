@@ -214,7 +214,7 @@ the integrations you need (each isolates its own dependencies):
 |---|---|---|---|
 | **`AgentSquad`** (core) | `import AgentSquad` | **nothing external** | protocols, agents, orchestrator, native tools (`ToolKit`, `Tool.local`/`.http`, `HTTPToolGroup`, `AggregateToolProvider`), `FileChatStorage`, `DeviceChatStorage` _(iOS 17+)_, `InMemoryChatStorage`, `OSLogTracer` |
 | **`AgentSquadMCP`** | `import AgentSquadMCP` | the official [MCP Swift SDK](https://github.com/modelcontextprotocol/swift-sdk) | `MCPServer` (alias of `MCPToolProvider`) — connect any MCP server with `MCPServer(url:)`, with MCP Apps UI support |
-| **`AgentSquadAudio`** | `import AgentSquadAudio` | AVFoundation (Apple platforms only) | `MicCapture` (echo-cancelled by default) + `AudioPlayback` for the realtime voice runtime — requires `NSMicrophoneUsageDescription` in your Info.plist |
+| **`AgentSquadAudio`** | `import AgentSquadAudio` | AVFoundation (Apple platforms only) | `VoiceProcessedAudioIO` (echo-cancelled capture + playback on one engine — the recommended wiring), `MicCapture`, `AudioPlayback` for the realtime voice runtime — requires `NSMicrophoneUsageDescription` in your Info.plist |
 
 So an app that doesn't use MCP never downloads the MCP SDK. Future optional integrations
 (e.g. `AgentSquadLangfuse` for trace export) follow the same pattern — the core never grows a
@@ -229,7 +229,7 @@ dependency. Add a product to your target's `dependencies` to use it:
 
 ## Voice audio — echo cancellation and full control
 
-By default `MicCapture` captures through Apple's **Voice-Processing I/O** unit — the native
+The audio layer captures through Apple's **Voice-Processing I/O** unit by default — the native
 equivalent of what ChatGPT's voice mode gets via WebRTC. The signal sent to the speaker is used
 as a hardware reference to subtract the assistant's own voice from the mic, plus noise
 suppression and automatic gain control. Without it, the assistant hears itself through the
@@ -238,22 +238,30 @@ speaker and interrupts its own answers.
 The audio layer is configurable in four independent levels — each level keeps everything the
 previous levels give you:
 
-**Level 0 — defaults.** Echo-cancelled capture, nothing to configure:
+**Level 0 — defaults.** `VoiceProcessedAudioIO` runs capture **and** playback on one
+`AVAudioEngine`, so the assistant's audio renders through the voice-processed output and is by
+construction in the echo canceller's reference path. Pass one instance as both `input:` and
+`output:`:
 
 ```swift
 import AgentSquadAudio
 
-let runtime = RealtimeRuntime(session: assistant, input: MicCapture(), output: AudioPlayback())
+let io = VoiceProcessedAudioIO()
+let runtime = RealtimeRuntime(session: assistant, input: io, output: io)
 try await runtime.start()
 ```
+
+The separate `MicCapture` + `AudioPlayback` pair still works (both echo-cancelled on the capture
+side by default) — but with two engines the echo reference is taken at the device level, which is
+route-dependent. Prefer `VoiceProcessedAudioIO` for voice sessions.
 
 **Level 1 — tune voice processing** (or turn it off):
 
 ```swift
 // Keep AEC but disable gain control and minimize how much the system ducks playback volume:
-let mic = MicCapture(voiceProcessing: .init(automaticGainControl: false, duckingLevel: .min))
+let io = VoiceProcessedAudioIO(voiceProcessing: .init(automaticGainControl: false, duckingLevel: .min))
 
-// Raw capture — no AEC at all (the previous default):
+// Raw capture — no AEC at all (the previous default; split pair only):
 let rawMic = MicCapture(voiceProcessing: nil)
 ```
 
@@ -261,22 +269,19 @@ If the Voice-Processing unit can't be enabled, `start()` throws
 `MicCaptureError.voiceProcessingUnavailable(_:)` rather than silently degrading — catch it and
 retry with `voiceProcessing: nil` if raw capture is an acceptable fallback for your app.
 
-**Level 2 — own the `AVAudioSession`, or reach the raw engine.** Both `MicCapture` and
-`AudioPlayback` take an `AudioSessionPolicy`; give them the same one so they can't fight:
+**Level 2 — own the `AVAudioSession`, or reach the raw engine.** All three audio classes take
+an `AudioSessionPolicy` (if you use the split pair, give both the same one so they can't fight):
 
 ```swift
 // Your app already manages its AVAudioSession (music, video, CallKit…) — AgentSquad won't touch it.
 // You must configure AND activate the session yourself before runtime.start().
-let mic = MicCapture(sessionPolicy: .external)
-let out = AudioPlayback(sessionPolicy: .external)
+let io = VoiceProcessedAudioIO(sessionPolicy: .external)
 
 // Or let AgentSquad drive the timing but with YOUR configuration (iOS):
-let policy = AudioSessionPolicy.custom { session in
+let io2 = VoiceProcessedAudioIO(sessionPolicy: .custom { session in
     try session.setCategory(.playAndRecord, mode: .voiceChat, options: [.allowBluetoothHFP])   // no speaker override
     try session.setActive(true)
-}
-let mic2 = MicCapture(sessionPolicy: policy)
-let out2 = AudioPlayback(sessionPolicy: policy)
+})
 ```
 
 The `configureEngine` hook hands you the underlying `AVAudioEngine` at the right lifecycle
@@ -284,7 +289,7 @@ moment (after voice processing is enabled, before the tap is installed), so any 
 API stays reachable without forking the class:
 
 ```swift
-let mic = MicCapture(configureEngine: { engine in
+let io = VoiceProcessedAudioIO(configureEngine: { engine in
     // e.g. inspect engine.inputNode, insert effect nodes, adopt future AVFoundation APIs…
 })
 ```

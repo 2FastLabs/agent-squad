@@ -23,8 +23,21 @@ public struct VoiceProcessing: Sendable, Equatable {
     public static let `default` = VoiceProcessing()
 }
 
-/// Who configures the `AVAudioSession`. `MicCapture` and `AudioPlayback` take the same policy so
-/// the two can't fight over the session. No effect on macOS (no `AVAudioSession` there).
+extension VoiceProcessing.DuckingLevel {
+    @available(iOS 17.0, macOS 14.0, *)
+    var avLevel: AVAudioVoiceProcessingOtherAudioDuckingConfiguration.Level {
+        switch self {
+        case .default: .default
+        case .min: .min
+        case .mid: .mid
+        case .max: .max
+        }
+    }
+}
+
+/// Who configures the `AVAudioSession`. All audio classes take a policy; if you use the split
+/// `MicCapture`/`AudioPlayback` pair, give both the same one so they can't fight over the
+/// session. No effect on macOS (no `AVAudioSession` there).
 public enum AudioSessionPolicy: Sendable {
     /// AgentSquad configures it: `.playAndRecord`, `.voiceChat`, speaker output, Bluetooth HFP.
     case managed

@@ -5,6 +5,10 @@ description: AVAudioEngine-backed AudioOutput that converts PCM16 frames to floa
 
 `AudioPlayback` is part of the `AgentSquadAudio` product. It accepts PCM16 @ 24 kHz frames, converts them to float32, and schedules them on an `AVAudioPlayerNode` for continuous playback. `flush()` provides an instant barge-in cut by discarding all buffered audio.
 
+:::tip
+For voice sessions, prefer [`VoiceProcessedAudioIO`](/agent-squad/swift/audio/built-in/voice-processed-audio-io/) — playback renders through the same voice-processed engine as capture, guaranteeing echo cancellation of the assistant's audio.
+:::
+
 ```swift
 import AgentSquadAudio
 ```

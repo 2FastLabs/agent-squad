@@ -3,11 +3,11 @@ title: Audio overview
 description: The AgentSquadAudio product and the AudioInput/AudioOutput protocols that connect microphone capture and speaker playback to the voice runtime.
 ---
 
-`AgentSquadAudio` is a separate Swift package product that ships two AVFoundation-backed implementations — `MicCapture` and `AudioPlayback` — built on top of two protocols declared in the core `AgentSquad` module.
+`AgentSquadAudio` is a separate Swift package product that ships three AVFoundation-backed implementations — `VoiceProcessedAudioIO` (the recommended one), `MicCapture`, and `AudioPlayback` — built on top of two protocols declared in the core `AgentSquad` module.
 
 ```swift
 import AgentSquad        // AudioInput, AudioOutput protocols
-import AgentSquadAudio   // MicCapture, AudioPlayback
+import AgentSquadAudio   // VoiceProcessedAudioIO, MicCapture, AudioPlayback
 ```
 
 ---
@@ -48,14 +48,17 @@ public protocol AudioOutput: Sendable {
 
 ## How they feed the voice runtime
 
-[`RealtimeRuntime`](/agent-squad/swift/voice/overview/) accepts an `AudioInput` and an `AudioOutput` at construction time:
+[`RealtimeRuntime`](/agent-squad/swift/voice/overview/) accepts an `AudioInput` and an `AudioOutput` at construction time. The recommended wiring is one `VoiceProcessedAudioIO` instance in both roles — capture and playback share a single voice-processed engine, so the assistant's audio is guaranteed to be in the echo canceller's reference path:
 
 ```swift
-let runtime = RealtimeRuntime(
-    input:  MicCapture(),
-    output: AudioPlayback(),
-    // ... other config
-)
+let io = VoiceProcessedAudioIO()
+let runtime = RealtimeRuntime(session: assistant, input: io, output: io)
+```
+
+The split pair works too (the AEC reference is then device-level, which is route-dependent):
+
+```swift
+let runtime = RealtimeRuntime(session: assistant, input: MicCapture(), output: AudioPlayback())
 ```
 
 The runtime drives `start`, `stop`, `enqueue`, and `flush` from its single event pump, so implementations are never called concurrently by the runtime itself.
@@ -70,7 +73,8 @@ The wire format for both protocols is **PCM16 little-endian mono at 24 kHz**. Th
 
 | Type | Protocol | Description |
 |---|---|---|
-| [`MicCapture`](/agent-squad/swift/audio/built-in/mic-capture/) | `AudioInput` | AVAudioEngine tap → PCM16 @ 24 kHz, with iOS permission gating |
+| [`VoiceProcessedAudioIO`](/agent-squad/swift/audio/built-in/voice-processed-audio-io/) | `AudioInput` + `AudioOutput` | Capture and playback on **one** voice-processed engine — guaranteed AEC reference path; pass one instance as both input and output |
+| [`MicCapture`](/agent-squad/swift/audio/built-in/mic-capture/) | `AudioInput` | AVAudioEngine tap → PCM16 @ 24 kHz, voice-processed by default, with iOS permission gating |
 | [`AudioPlayback`](/agent-squad/swift/audio/built-in/audio-playback/) | `AudioOutput` | AVAudioEngine + AVAudioPlayerNode, with barge-in flush |
 
 ---

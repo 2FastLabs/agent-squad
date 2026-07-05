@@ -114,38 +114,7 @@ public final class MicCapture: AudioInput, @unchecked Sendable {
 
     /// Runs on the real-time audio thread: convert one captured buffer to PCM16/24k and yield it.
     private func process(_ buffer: AVAudioPCMBuffer, with converter: AVAudioConverter) {
-        let ratio = targetFormat.sampleRate / buffer.format.sampleRate
-        let capacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio) + 1_024
-        guard let output = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: capacity) else { return }
-
-        // The block form is REQUIRED for sample-rate conversion (48k→24k) — `convert(to:from:)`
-        // throws on differing sample rates. Feeding one input buffer per call with the converter
-        // reused across taps is the correct *streaming* idiom: it carries resampler filter state
-        // between calls for continuity. The input block is `@Sendable` but called synchronously on
-        // this thread, so single-threaded access to these captures is safe.
-        nonisolated(unsafe) let source = buffer
-        nonisolated(unsafe) var provided = false
-        var conversionError: NSError?
-        converter.convert(to: output, error: &conversionError) { _, status in
-            if provided { status.pointee = .noDataNow; return nil }
-            provided = true
-            status.pointee = .haveData
-            return source
-        }
-        guard conversionError == nil, output.frameLength > 0, let samples = output.int16ChannelData else { return }
-        continuation.yield(Data(bytes: samples[0], count: Int(output.frameLength) * MemoryLayout<Int16>.size))
-    }
-}
-
-private extension VoiceProcessing.DuckingLevel {
-    @available(iOS 17.0, macOS 14.0, *)
-    var avLevel: AVAudioVoiceProcessingOtherAudioDuckingConfiguration.Level {
-        switch self {
-        case .default: .default
-        case .min: .min
-        case .mid: .mid
-        case .max: .max
-        }
+        PCM16.convertAndYield(buffer, converter: converter, targetFormat: targetFormat, continuation: continuation)
     }
 }
 

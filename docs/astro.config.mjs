@@ -288,6 +288,7 @@ export default defineConfig({
 										label: 'Audio',
 										items: [
 											{ label: 'Overview', slug: 'swift/audio/overview' },
+											{ label: 'VoiceProcessedAudioIO', slug: 'swift/audio/built-in/voice-processed-audio-io' },
 											{ label: 'MicCapture', slug: 'swift/audio/built-in/mic-capture' },
 											{ label: 'AudioPlayback', slug: 'swift/audio/built-in/audio-playback' },
 											{ label: 'Custom audio', slug: 'swift/audio/custom' },

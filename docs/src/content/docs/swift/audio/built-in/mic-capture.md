@@ -7,6 +7,10 @@ description: AVAudioEngine-backed AudioInput that taps the microphone, converts 
 
 By default it captures through Apple's **Voice-Processing I/O** unit: echo cancellation that uses the speaker signal as a hardware reference to subtract the assistant's own voice from the mic, plus noise suppression and automatic gain control.
 
+:::tip
+For voice sessions, prefer [`VoiceProcessedAudioIO`](/agent-squad/swift/audio/built-in/voice-processed-audio-io/) — capture and playback on **one** engine, which guarantees the assistant's audio is in the AEC reference path. With the split `MicCapture`/`AudioPlayback` pair the reference is device-level and route-dependent.
+:::
+
 ```swift
 import AgentSquadAudio
 ```
