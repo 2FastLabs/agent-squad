@@ -212,7 +212,7 @@ the integrations you need (each isolates its own dependencies):
 
 | Library | `import` | Pulls in | Contents |
 |---|---|---|---|
-| **`AgentSquad`** (core) | `import AgentSquad` | **nothing external** | protocols, agents, orchestrator, native tools (`ToolKit`, `Tool.local`/`.http`, `HTTPToolGroup`, `AggregateToolProvider`), `FileChatStorage`, `DeviceChatStorage` _(iOS 17+)_, `InMemoryChatStorage`, `OSLogTracer` |
+| **`AgentSquad`** (core) | `import AgentSquad` | **nothing external** | protocols, agents, orchestrator, native tools (`ToolKit`, `Tool.local`/`.http`, `HTTPToolGroup`, `AggregateToolProvider`), `FileChatStorage`, `DeviceChatStorage` _(iOS 17+)_, `InMemoryChatStorage`, `TransformingChatStorage`, `OSLogTracer` |
 | **`AgentSquadMCP`** | `import AgentSquadMCP` | the official [MCP Swift SDK](https://github.com/modelcontextprotocol/swift-sdk) | `MCPServer` (alias of `MCPToolProvider`) — connect any MCP server with `MCPServer(url:)`, with MCP Apps UI support |
 | **`AgentSquadAudio`** | `import AgentSquadAudio` | AVFoundation (Apple platforms only) | `VoiceProcessedAudioIO` (echo-cancelled capture + playback on one engine — the recommended wiring), `MicCapture`, `AudioPlayback` for the realtime voice runtime — requires `NSMicrophoneUsageDescription` in your Info.plist |
 

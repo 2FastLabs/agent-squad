@@ -31,7 +31,7 @@ Every component is a `Sendable` protocol with one built-in implementation — sw
 
 | Import | Pulls in | Contents |
 |---|---|---|
-| `AgentSquad` | nothing external | protocols, `Agent`, `GroundedAgent`, `Orchestrator`, `LLMClassifier`, `ChatCompletionsClient`, `FileChatStorage`, `DeviceChatStorage`, `InMemoryChatStorage`, `OSLogTracer`, OTLP export |
+| `AgentSquad` | nothing external | protocols, `Agent`, `GroundedAgent`, `Orchestrator`, `LLMClassifier`, `ChatCompletionsClient`, `FileChatStorage`, `DeviceChatStorage`, `InMemoryChatStorage`, `TransformingChatStorage`, `OSLogTracer`, OTLP export |
 | `AgentSquadMCP` | MCP Swift SDK | `MCPServer` (= `MCPToolProvider`), `SDKMCPClient` |
 | `AgentSquadAudio` | AVFoundation | `VoiceProcessedAudioIO` (capture+playback, one engine, AEC — the recommended wiring), `MicCapture` (voice-processed/AEC by default), `AudioPlayback`, `VoiceProcessing`, `AudioSessionPolicy` (needs `NSMicrophoneUsageDescription`) |
 
@@ -71,7 +71,7 @@ stream. `.final` is what the orchestrator persists. Inputs/messages are value ty
   config once, then one line per endpoint; **`MCPServer(url:)`** connects an MCP server; and
   **`AggregateToolProvider`** composes any mix behind one seam. A `ToolResult` is three-part: text →
   the model's context, `structuredContent` → curator/UI data, `ui` → an optional widget.
-- **`FileChatStorage`** (JSON files, iOS 16+) and **`DeviceChatStorage`** (SwiftData, iOS 17+) persist history on-device; **`InMemoryChatStorage`** is a non-persistent, seedable single-conversation store. **`OSLogTracer`** is the default
+- **`FileChatStorage`** (JSON files, iOS 16+) and **`DeviceChatStorage`** (SwiftData, iOS 17+) persist history on-device; **`InMemoryChatStorage`** is a non-persistent, seedable single-conversation store. **`TransformingChatStorage`** wraps any store and runs a `MessageTransform` before each save (PII scrub / redact / drop) — reads pass through, `message.mappingText { … }` covers the text-only case. **`OSLogTracer`** is the default
   tracer; wire `ProcessingTracer` + `OTLPExporter` to ship traces to Langfuse/LangSmith/Datadog/…
 - **Voice**: two `VoiceAssistant`s over a WebSocket — `OpenAIVoiceAssistant` (single LLM, speaks
   directly) and `OpenAIGroundedVoiceAssistant` (grounded Brain → Presenter). Both are self-sufficient
@@ -118,7 +118,7 @@ signatures live in `Sources/AgentSquad/`.
 - **`ChatCompletionsClient`**: retries only *before the first event*; some local runtimes reject
   `stream_options`/unknown body keys — override via `extraBody`.
 - **`JSONValue`**: whole-number doubles decode to `.int`; carry large IDs as `.string`.
-- **Storage**: `FileChatStorage` (JSON, iOS 16+, scopes per-call by `userId`/`sessionId`/`agentId` — e.g. `sessionId` to isolate per match) or `DeviceChatStorage` (SwiftData, iOS 17+, bound to one `userId`). Both default to Library/Caches (disposable). `InMemoryChatStorage` (iOS 16+) is non-persistent and holds one conversation — construct it empty or seeded with a prior conversation to load one into a session.
+- **Storage**: `FileChatStorage` (JSON, iOS 16+, scopes per-call by `userId`/`sessionId`/`agentId` — e.g. `sessionId` to isolate per match) or `DeviceChatStorage` (SwiftData, iOS 17+, bound to one `userId`). Both default to Library/Caches (disposable). `InMemoryChatStorage` (iOS 16+) is non-persistent and holds one conversation — construct it empty or seeded with a prior conversation to load one into a session. Wrap any store in `TransformingChatStorage` to scrub/redact before persistence; prefer redacting over returning `nil` (dropping one side of an exchange can make the store skip its counterpart via the consecutive-same-role guard).
 - **Tracing lifecycle**: nothing drains the tracer for you — flush on background, shut down on
   termination. `OSLogTracer` logs no payloads. `Redaction` hashes ids + clips strings but does **not**
   pattern-scrub PII — supply a custom `Redactor` for that.

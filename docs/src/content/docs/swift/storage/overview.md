@@ -77,6 +77,8 @@ Passing `store: nil` to the Orchestrator or voice assistant disables persistence
 
 For [voice](/agent-squad/swift/voice/overview/) sessions the same stores apply — pass the chosen instance to the voice assistant's `store:` parameter exactly as you would for a text Orchestrator.
 
+Any of them can be wrapped in [`TransformingChatStorage`](/agent-squad/swift/storage/built-in/transforming/) to scrub PII or reshape messages before they are persisted.
+
 :::note
 `InMemoryChatStorage` is scope-agnostic and returns no `[agentId]` prefix from `fetchAllChats`. For multi-agent Orchestrators where the Classifier needs routing attribution, use one of the persistent stores.
 :::
@@ -88,6 +90,7 @@ For [voice](/agent-squad/swift/voice/overview/) sessions the same stores apply �
 - [InMemoryChatStorage](/agent-squad/swift/storage/built-in/in-memory/) — non-persistent, seedable, iOS 16+
 - [FileChatStorage](/agent-squad/swift/storage/built-in/file/) — JSON files, iOS 16+
 - [DeviceChatStorage](/agent-squad/swift/storage/built-in/device/) — SwiftData, iOS 17+ / macOS 14+
+- [TransformingChatStorage](/agent-squad/swift/storage/built-in/transforming/) — wraps any store; PII scrub / message transform before saving, iOS 16+
 
 ## Custom store
 
