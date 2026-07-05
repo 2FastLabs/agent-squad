@@ -22,6 +22,30 @@ import AgentSquad
     @Test func micCaptureErrorIsEquatable() {
         #expect(MicCaptureError.permissionDenied == .permissionDenied)
         #expect(MicCaptureError.permissionDenied != .converterUnavailable)
+        #expect(MicCaptureError.voiceProcessingUnavailable("x") == .voiceProcessingUnavailable("x"))
+        #expect(MicCaptureError.voiceProcessingUnavailable("x") != .voiceProcessingUnavailable("y"))
+    }
+
+    @Test func voiceProcessingDefaults() {
+        #expect(VoiceProcessing.default == VoiceProcessing())
+        #expect(VoiceProcessing.default.automaticGainControl)
+        #expect(VoiceProcessing.default.duckingLevel == .default)
+        #expect(VoiceProcessing(automaticGainControl: false, duckingLevel: .min) != .default)
+    }
+
+    @Test func micCaptureConstructsAcrossConfigurations() {
+        // Raw capture, external session, engine hook — constructing must not touch hardware.
+        _ = MicCapture(voiceProcessing: nil)
+        _ = MicCapture(sessionPolicy: .external, configureEngine: { _ in })
+        _ = MicCapture(voiceProcessing: .init(automaticGainControl: false, duckingLevel: .max))
+        #if os(iOS)
+        _ = MicCapture(sessionPolicy: .custom { _ in })
+        #endif
+    }
+
+    @Test func audioPlaybackConstructsAcrossConfigurations() {
+        _ = AudioPlayback(sessionPolicy: .external)
+        _ = AudioPlayback(sessionPolicy: .managed, configureEngine: { _ in })
     }
 
     @Test func pcm16ToFloatScalingAndEndianness() {

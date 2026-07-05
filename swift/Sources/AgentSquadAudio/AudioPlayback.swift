@@ -11,21 +11,33 @@ public final class AudioPlayback: AudioOutput, @unchecked Sendable {
     private let engine = AVAudioEngine()
     private let player = AVAudioPlayerNode()
     private let format: AVAudioFormat
+    private let sessionPolicy: AudioSessionPolicy
+    private let configureEngine: (@Sendable (AVAudioEngine) throws -> Void)?
     private var isStarted = false
 
-    public init(sampleRate: Double = 24_000) {
+    /// `configureEngine` runs after the player is attached/connected, before the engine starts —
+    /// the escape hatch to any `AVAudioEngine` API AgentSquad doesn't wrap. Do NOT enable voice
+    /// processing here: it belongs on the capture engine (`MicCapture`), not playback.
+    public init(
+        sampleRate: Double = 24_000,
+        sessionPolicy: AudioSessionPolicy = .managed,
+        configureEngine: (@Sendable (AVAudioEngine) throws -> Void)? = nil
+    ) {
         self.format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 1)!   // float32, non-interleaved
+        self.sessionPolicy = sessionPolicy
+        self.configureEngine = configureEngine
     }
 
     public func start() async throws {
         guard !isStarted else { return }   // start-once: a second engine.attach(player) would crash
         #if os(iOS)
-        try VoiceAudioSession.activate()
+        try VoiceAudioSession.activate(policy: sessionPolicy)
         #endif
         engine.attach(player)
         engine.connect(player, to: engine.mainMixerNode, format: format)
-        engine.prepare()
         do {
+            try configureEngine?(engine)
+            engine.prepare()
             try engine.start()
         } catch {
             engine.detach(player)   // roll back so a retry's attach(player) doesn't crash

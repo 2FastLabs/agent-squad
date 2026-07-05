@@ -214,7 +214,7 @@ the integrations you need (each isolates its own dependencies):
 |---|---|---|---|
 | **`AgentSquad`** (core) | `import AgentSquad` | **nothing external** | protocols, agents, orchestrator, native tools (`ToolKit`, `Tool.local`/`.http`, `HTTPToolGroup`, `AggregateToolProvider`), `FileChatStorage`, `DeviceChatStorage` _(iOS 17+)_, `InMemoryChatStorage`, `OSLogTracer` |
 | **`AgentSquadMCP`** | `import AgentSquadMCP` | the official [MCP Swift SDK](https://github.com/modelcontextprotocol/swift-sdk) | `MCPServer` (alias of `MCPToolProvider`) — connect any MCP server with `MCPServer(url:)`, with MCP Apps UI support |
-| **`AgentSquadAudio`** | `import AgentSquadAudio` | AVFoundation (Apple platforms only) | `MicCapture` + `AudioPlayback` for the realtime voice runtime — requires `NSMicrophoneUsageDescription` in your Info.plist |
+| **`AgentSquadAudio`** | `import AgentSquadAudio` | AVFoundation (Apple platforms only) | `MicCapture` (echo-cancelled by default) + `AudioPlayback` for the realtime voice runtime — requires `NSMicrophoneUsageDescription` in your Info.plist |
 
 So an app that doesn't use MCP never downloads the MCP SDK. Future optional integrations
 (e.g. `AgentSquadLangfuse` for trace export) follow the same pattern — the core never grows a
@@ -226,6 +226,82 @@ dependency. Add a product to your target's `dependencies` to use it:
     .product(name: "AgentSquadMCP", package: "agent-squad"),   // only if you want MCP tools
 ])
 ```
+
+## Voice audio — echo cancellation and full control
+
+By default `MicCapture` captures through Apple's **Voice-Processing I/O** unit — the native
+equivalent of what ChatGPT's voice mode gets via WebRTC. The signal sent to the speaker is used
+as a hardware reference to subtract the assistant's own voice from the mic, plus noise
+suppression and automatic gain control. Without it, the assistant hears itself through the
+speaker and interrupts its own answers.
+
+The audio layer is configurable in four independent levels — each level keeps everything the
+previous levels give you:
+
+**Level 0 — defaults.** Echo-cancelled capture, nothing to configure:
+
+```swift
+import AgentSquadAudio
+
+let runtime = RealtimeRuntime(session: assistant, input: MicCapture(), output: AudioPlayback())
+try await runtime.start()
+```
+
+**Level 1 — tune voice processing** (or turn it off):
+
+```swift
+// Keep AEC but disable gain control and minimize how much the system ducks playback volume:
+let mic = MicCapture(voiceProcessing: .init(automaticGainControl: false, duckingLevel: .min))
+
+// Raw capture — no AEC at all (the previous default):
+let rawMic = MicCapture(voiceProcessing: nil)
+```
+
+If the Voice-Processing unit can't be enabled, `start()` throws
+`MicCaptureError.voiceProcessingUnavailable(_:)` rather than silently degrading — catch it and
+retry with `voiceProcessing: nil` if raw capture is an acceptable fallback for your app.
+
+**Level 2 — own the `AVAudioSession`, or reach the raw engine.** Both `MicCapture` and
+`AudioPlayback` take an `AudioSessionPolicy`; give them the same one so they can't fight:
+
+```swift
+// Your app already manages its AVAudioSession (music, video, CallKit…) — AgentSquad won't touch it.
+// You must configure AND activate the session yourself before runtime.start().
+let mic = MicCapture(sessionPolicy: .external)
+let out = AudioPlayback(sessionPolicy: .external)
+
+// Or let AgentSquad drive the timing but with YOUR configuration (iOS):
+let policy = AudioSessionPolicy.custom { session in
+    try session.setCategory(.playAndRecord, mode: .voiceChat, options: [.allowBluetoothHFP])   // no speaker override
+    try session.setActive(true)
+}
+let mic2 = MicCapture(sessionPolicy: policy)
+let out2 = AudioPlayback(sessionPolicy: policy)
+```
+
+The `configureEngine` hook hands you the underlying `AVAudioEngine` at the right lifecycle
+moment (after voice processing is enabled, before the tap is installed), so any AVFoundation
+API stays reachable without forking the class:
+
+```swift
+let mic = MicCapture(configureEngine: { engine in
+    // e.g. inspect engine.inputNode, insert effect nodes, adopt future AVFoundation APIs…
+})
+```
+
+**Level 3 — replace the audio path entirely.** `AudioInput`/`AudioOutput` are protocols and
+`RealtimeRuntime` accepts any conformer — bring WebRTC capture, CallKit audio, or a fully custom
+pipeline and keep the rest of the stack (transport, VAD, tools, tracing):
+
+```swift
+final class MyCapture: AudioInput { /* frames, start(), stop() */ }
+let runtime = RealtimeRuntime(session: assistant, input: MyCapture(), output: AudioPlayback())
+```
+
+> **Validate on a real device.** The simulator performs no echo cancellation at all, so AEC can't
+> be tested there. Expect voice-processed audio to sound "call-like" and slightly quieter — use
+> `duckingLevel: .min` to compensate. Never enable voice processing on the playback engine; it
+> belongs on capture only.
 
 ## Architecture
 

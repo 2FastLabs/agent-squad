@@ -33,7 +33,7 @@ Every component is a `Sendable` protocol with one built-in implementation — sw
 |---|---|---|
 | `AgentSquad` | nothing external | protocols, `Agent`, `GroundedAgent`, `Orchestrator`, `LLMClassifier`, `ChatCompletionsClient`, `FileChatStorage`, `DeviceChatStorage`, `InMemoryChatStorage`, `OSLogTracer`, OTLP export |
 | `AgentSquadMCP` | MCP Swift SDK | `MCPServer` (= `MCPToolProvider`), `SDKMCPClient` |
-| `AgentSquadAudio` | AVFoundation | `MicCapture`, `AudioPlayback` (needs `NSMicrophoneUsageDescription`) |
+| `AgentSquadAudio` | AVFoundation | `MicCapture` (voice-processed/AEC by default), `AudioPlayback`, `VoiceProcessing`, `AudioSessionPolicy` (needs `NSMicrophoneUsageDescription`) |
 
 SwiftPM: `.package(url: "https://github.com/2FastLabs/agent-squad", branch: "main")`.
 
@@ -77,6 +77,10 @@ stream. `.final` is what the orchestrator persists. Inputs/messages are value ty
   directly) and `OpenAIGroundedVoiceAssistant` (grounded Brain → Presenter). Both are self-sufficient
   (own `tracer`/`store`/`userId`/`sessionId`; with a `store`, completed turns persist and prior
   history seeds on `start()`), wired to the mic/speaker by `RealtimeRuntime` with `MicCapture`/`AudioPlayback`.
+  `MicCapture` captures through Apple's Voice-Processing I/O unit by default (echo cancellation,
+  noise suppression, AGC — tune via `voiceProcessing:`, or pass `nil` for raw capture); both audio
+  classes take an `AudioSessionPolicy` (`.managed` / `.custom` / `.external` for apps that own the
+  `AVAudioSession`) and a `configureEngine` hook exposing the raw `AVAudioEngine`.
   Session tuning on both: `transcriptionModel` (the user's STT only), `turnDetection`
   (`.semanticVAD(eagerness:)` / `.serverVAD(threshold:…)` / `.disabled`), and `sessionOverrides`
   (deep-merged into the generated `session.update` last — the escape hatch for unmodeled keys like
@@ -99,6 +103,7 @@ signatures live in `Sources/AgentSquad/`.
 | Storage | `ChatStorage` | `Core/Storage/` · `storage/custom` |
 | Tracing | `TraceExporter` (easiest) / `SpanProcessor` / `Tracer` / `Redactor` | `Core/Tracing/` · `tracing/custom` |
 | Realtime transport | `RealtimeTransport` | `Runtimes/Realtime/` · `voice/custom` |
+| Audio I/O | `AudioInput` / `AudioOutput` | `Runtimes/Realtime/AudioIO.swift` · `audio/custom` |
 
 ## Gotchas
 
@@ -116,6 +121,12 @@ signatures live in `Sources/AgentSquad/`.
   pattern-scrub PII — supply a custom `Redactor` for that.
 - **Realtime** is a peer runtime, not an agent; its `events` stream is non-throwing; needs
   `NSMicrophoneUsageDescription`; always `stop()`.
+- **Voice processing (AEC)**: on by default in `MicCapture`; if it can't be enabled `start()`
+  throws `.voiceProcessingUnavailable` (degrade deliberately with `voiceProcessing: nil`). The
+  simulator does **no** AEC — validate on a device. VP quiets the speaker (counter with
+  `duckingLevel: .min`); never enable VP on the playback engine. With `sessionPolicy: .external`
+  the app must configure **and activate** its `AVAudioSession` before `start()`, and should pass
+  the same policy to both `MicCapture` and `AudioPlayback`.
 - **`ContentPart` Codable** keys off case + label names — renaming breaks stored history.
 
 ## Go deeper
