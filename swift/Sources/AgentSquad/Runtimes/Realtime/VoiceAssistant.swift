@@ -81,4 +81,14 @@ public protocol VoiceAssistant: Sendable {
     var events: AsyncStream<RealtimeEvent> { get }
     /// Close the connection.
     func stop() async
+    /// Install a playback clock: how many milliseconds of assistant audio were actually played
+    /// (`nil` = unmeasurable). With WebSocket transports the client manages playback, so on
+    /// barge-in the session uses this to send `conversation.item.truncate` — keeping the server's
+    /// context aligned with what the user heard. `RealtimeRuntime` installs it at `start()`.
+    /// Optional: the default is a no-op, and sessions without a clock skip truncation.
+    func setPlaybackClock(_ playedMilliseconds: @escaping @Sendable () async -> Double?) async
+}
+
+public extension VoiceAssistant {
+    func setPlaybackClock(_ playedMilliseconds: @escaping @Sendable () async -> Double?) async {}
 }

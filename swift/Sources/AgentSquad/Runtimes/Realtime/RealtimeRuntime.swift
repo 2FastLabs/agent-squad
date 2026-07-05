@@ -27,6 +27,9 @@ public actor RealtimeRuntime {
     }
 
     public func start() async throws {
+        // Wire the output's played-ms clock into the session so barge-in can send
+        // `conversation.item.truncate` (WebSocket transports: the client manages playback).
+        await session.setPlaybackClock { [output] in await output.playedMilliseconds() }
         try await output.start()
         try await session.start()
         try await input.start()

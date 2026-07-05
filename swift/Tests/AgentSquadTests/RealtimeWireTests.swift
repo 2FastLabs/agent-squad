@@ -165,9 +165,35 @@ import Testing
 
     @Test func decodesGAAndLegacyAudioDeltaToTheSameEvent() {
         for type in ["response.output_audio.delta", "response.audio.delta"] {
-            let event = RealtimeWire.decode(#"{"type":"\#(type)","response_id":"p1","delta":"AAAA"}"#)
-            #expect(event == .audioDelta(responseId: "p1", base64: "AAAA"))
+            let event = RealtimeWire.decode(#"{"type":"\#(type)","response_id":"p1","item_id":"item_9","delta":"AAAA"}"#)
+            #expect(event == .audioDelta(responseId: "p1", itemId: "item_9", base64: "AAAA"))
         }
+    }
+
+    @Test func truncationStateIsPerItemAcrossABurst() {
+        // Tool→continue turns speak several items back-to-back without playback draining: the
+        // burst clock covers all of them, so the frame must subtract the previous items' audio.
+        var state = AudioTruncationState()
+        state.record(itemId: "item_A", pcm16ByteCount: 24_000, sampleRate: 24_000)   // 500 ms
+        state.record(itemId: "item_B", pcm16ByteCount: 144_000, sampleRate: 24_000)  // 3 000 ms
+        // Burst played 800 ms total = all of A (500) + 300 of B → truncate B at 300, not 800.
+        let frame = state.truncateFrame(playedMs: 800)
+        #expect(frame?.contains(#""item_id":"item_B""#) == true)
+        #expect(frame?.contains(#""audio_end_ms":300"#) == true)
+        // Clock restarted (burst drained between items) → played < offset → skip, never negative.
+        #expect(state.truncateFrame(playedMs: 200) == nil)
+        // Stale clock beyond this item's received audio → skip (server errors past the duration).
+        #expect(state.truncateFrame(playedMs: 4_000) == nil)
+        #expect(state.truncateFrame(playedMs: nil) == nil)
+    }
+
+    @Test func truncateItemFrameMatchesTheSpec() throws {
+        // reference/client-events.md: required fields type/item_id/content_index/audio_end_ms; content_index is 0.
+        let json = try object(RealtimeWire.truncateItem(itemId: "item_002", audioEndMs: 1_500))
+        #expect(json["type"] as? String == "conversation.item.truncate")
+        #expect(json["item_id"] as? String == "item_002")
+        #expect(json["content_index"] as? Int == 0)
+        #expect(json["audio_end_ms"] as? Int == 1_500)
     }
 
     @Test func audioTranscriptDeltaIsNotMistakenForAudioDelta() {

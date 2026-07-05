@@ -13,6 +13,7 @@ public final class AudioPlayback: AudioOutput, @unchecked Sendable {
     private let format: AVAudioFormat
     private let sessionPolicy: AudioSessionPolicy
     private let configureEngine: (@Sendable (AVAudioEngine) throws -> Void)?
+    private let clock = PlaybackClock()
     private var isStarted = false
 
     /// `configureEngine` runs after the player is attached/connected, before the engine starts —
@@ -55,11 +56,18 @@ public final class AudioPlayback: AudioOutput, @unchecked Sendable {
     /// Sync hand-off so the non-async `scheduleBuffer` overload is selected (we must NOT await
     /// playback completion — that would serialize enqueue to real-time playback speed).
     private func schedule(_ buffer: AVAudioPCMBuffer) {
-        player.scheduleBuffer(buffer, completionHandler: nil)
+        let durationMs = Double(buffer.frameLength) / format.sampleRate * 1_000
+        let token = clock.willSchedule()
+        player.scheduleBuffer(buffer, completionCallbackType: .dataPlayedBack) { [clock] _ in
+            clock.completed(durationMs: durationMs, token: token)
+        }
     }
 
     public func flush() async {
         // `stop()` discards all scheduled buffers — the instant barge-in cut — then re-arm for next.
+        // The clock keeps its played total (voiding only pending buffers) so the session can still
+        // sample it for `conversation.item.truncate`.
+        clock.flushed()
         player.stop()
         player.play()
     }
@@ -67,7 +75,12 @@ public final class AudioPlayback: AudioOutput, @unchecked Sendable {
     public func stop() async {
         player.stop()
         engine.stop()
+        clock.reset()
         isStarted = false
+    }
+
+    public func playedMilliseconds() async -> Double? {
+        clock.milliseconds()
     }
 
     private func makeBuffer(_ data: Data) -> AVAudioPCMBuffer? {

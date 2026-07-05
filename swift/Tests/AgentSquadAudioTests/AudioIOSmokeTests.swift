@@ -66,6 +66,66 @@ import AgentSquad
         await io.stop()
     }
 
+    @Test func playbackClockAccumulatesPlayedBuffers() {
+        let clock = PlaybackClock()
+        let t1 = clock.willSchedule()
+        let t2 = clock.willSchedule()
+        clock.completed(durationMs: 40, token: t1)
+        clock.completed(durationMs: 60, token: t2)
+        #expect(clock.milliseconds() == 100)
+    }
+
+    @Test func playbackClockSurvivesFlushAndVoidsPendingBuffers() {
+        // The realistic barge-in: deltas outpace playback, so the queue still holds buffers at the cut.
+        let clock = PlaybackClock()
+        let played = clock.willSchedule()
+        let pending = clock.willSchedule()   // still queued when the user barges in
+        clock.completed(durationMs: 40, token: played)
+        clock.flushed()
+        // player.stop() fires the pending buffer's callback too — it must not count.
+        clock.completed(durationMs: 500, token: pending)
+        #expect(clock.milliseconds() == 40)   // the played total survives the flush for sampling
+    }
+
+    @Test func playbackClockUnderReportsAfterAMidResponseStall() {
+        // Queue drains mid-response (stall) → the next buffer starts a new burst and the total
+        // restarts. Deliberate: truncation then under-reports, which never claims unheard audio
+        // was played (over-reporting is the server-error case).
+        let clock = PlaybackClock()
+        let t1 = clock.willSchedule()
+        clock.completed(durationMs: 40, token: t1)   // drained
+        let t2 = clock.willSchedule()                // stalled response resumes
+        clock.completed(durationMs: 10, token: t2)
+        #expect(clock.milliseconds() == 10)
+    }
+
+    @Test func playbackClockStartsANewBurstAfterDrainOrFlush() {
+        let clock = PlaybackClock()
+        let t1 = clock.willSchedule()
+        clock.completed(durationMs: 40, token: t1)         // queue drained → idle
+        let t2 = clock.willSchedule()                       // new burst → total resets
+        clock.completed(durationMs: 10, token: t2)
+        #expect(clock.milliseconds() == 10)
+
+        clock.flushed()                                     // barge-in → idle
+        let t3 = clock.willSchedule()
+        clock.completed(durationMs: 5, token: t3)
+        #expect(clock.milliseconds() == 5)
+    }
+
+    @Test func outputsExposeAPlayedClockAndInputsDefaultToNil() async {
+        // Pre-start: 0 from the built-ins (measured, nothing played), nil from the protocol default.
+        struct BareOutput: AudioOutput {
+            func start() async throws {}
+            func enqueue(_ pcm16: Data) async {}
+            func flush() async {}
+            func stop() async {}
+        }
+        #expect(await AudioPlayback().playedMilliseconds() == 0)
+        #expect(await VoiceProcessedAudioIO().playedMilliseconds() == 0)
+        #expect(await BareOutput().playedMilliseconds() == nil)
+    }
+
     @Test func pcm16FloatBufferMatchesFloatSamples() {
         let format = AVAudioFormat(standardFormatWithSampleRate: 24_000, channels: 1)!
         let buffer = PCM16.floatBuffer(fromPCM16: Data([0x00, 0x00, 0xFF, 0x7F, 0x00, 0x80]), format: format)

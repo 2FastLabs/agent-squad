@@ -40,7 +40,10 @@ public func start()                 async throws  // attaches player node, start
 public func enqueue(_ pcm16: Data)  async          // schedules one PCM16 frame for playback
 public func flush()                 async          // discards all scheduled/playing buffers — instant barge-in cut
 public func stop()                  async          // stops player and engine
+public func playedMilliseconds()    async -> Double?  // ms actually played of the current burst (survives flush)
 ```
+
+`playedMilliseconds()` is measured from the player's `.dataPlayedBack` buffer callbacks and feeds the session's `conversation.item.truncate` on barge-in — after a `flush()` it still reports the interrupted burst's played total until new audio starts.
 
 `start()` is idempotent — a second call before `stop()` is a no-op.
 

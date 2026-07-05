@@ -303,6 +303,10 @@ final class MyCapture: AudioInput { /* frames, start(), stop() */ }
 let runtime = RealtimeRuntime(session: assistant, input: MyCapture(), output: AudioPlayback())
 ```
 
+A custom `AudioOutput` can also implement `playedMilliseconds()` (defaults to `nil`) — the
+session uses it to send `conversation.item.truncate` on barge-in, so the model's context only
+keeps what the user actually heard. The built-in outputs measure this automatically.
+
 > **Validate on a real device.** The simulator performs no echo cancellation at all, so AEC can't
 > be tested there. Expect voice-processed audio to sound "call-like" and slightly quieter — use
 > `duckingLevel: .min` to compensate. Never enable voice processing on the playback engine; it

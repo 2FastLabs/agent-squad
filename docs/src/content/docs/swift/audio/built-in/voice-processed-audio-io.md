@@ -50,7 +50,10 @@ public func start() async throws        // both roles; idempotent
 public func enqueue(_ pcm16: Data) async // AudioOutput — schedule one frame
 public func flush() async                // AudioOutput — instant barge-in cut
 public func stop()  async                // both roles; idempotent
+public func playedMilliseconds() async -> Double?  // ms actually played of the current burst (survives flush)
 ```
+
+`playedMilliseconds()` feeds the session's `conversation.item.truncate` on barge-in, keeping the server's context aligned with what the user actually heard.
 
 `start()` and `stop()` are **idempotent** — `RealtimeRuntime` calls each twice on the same instance (once through the `AudioOutput` role, once through `AudioInput`), and the second call is a no-op. `enqueue`/`flush` before `start()` or after `stop()` are safe no-ops. One instance serves **one session**: `stop()` finishes the `frames` stream for good — create a new instance to start again.
 

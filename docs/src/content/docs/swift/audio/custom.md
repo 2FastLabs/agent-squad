@@ -96,6 +96,8 @@ actor RecordingAudioOutput: AudioOutput {
 `RecordingAudioOutput` is declared as an `actor`, which satisfies `Sendable` implicitly. For a `class`-based conformance — like `MicCapture` and `AudioPlayback` — mark it `@unchecked Sendable` and serialise access yourself (or route all calls through a single `Task`).
 :::
 
+`playedMilliseconds()` is not implemented above — the protocol defaults it to `nil`, which skips barge-in truncation (`conversation.item.truncate`) and changes nothing else. Implement it (ms actually played of the current burst, surviving `flush()`) if your output plays audio for real and you want the model's context to keep only what the user heard.
+
 ---
 
 ## Wiring a custom implementation

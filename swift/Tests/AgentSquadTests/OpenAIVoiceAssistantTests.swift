@@ -131,6 +131,68 @@ import Testing
         #expect(log.audioCount == 1)
     }
 
+    @Test func bargeInTruncatesTheHeardPortion() async throws {
+        let transport = MockRealtimeTransport()
+        let log = EventLog()
+        let session = session(transport)
+        await session.setPlaybackClock { 40 }   // 40 ms actually played
+        log.start(session)
+        try await session.start()
+
+        transport.push(responseCreated("r1"))
+        // 4 800 PCM16 bytes = 100 ms @ 24 kHz — more than the 40 ms played, so truncation applies.
+        transport.push(audioDelta("r1", String(repeating: "x", count: 4_800), item: "item_7"))
+        await eventually { log.audioCount == 1 }   // delta processed → truncation state recorded
+
+        transport.push(#"{"type":"input_audio_buffer.speech_started"}"#)
+        await eventually { sentTypes(transport).contains("response.cancel") }
+
+        let truncate = transport.sent.first { $0.contains("conversation.item.truncate") }
+        let frame = try #require(truncate)
+        #expect(frame.contains(#""item_id":"item_7""#))
+        #expect(frame.contains(#""audio_end_ms":40"#))
+        #expect(frame.contains(#""content_index":0"#))
+        // Ordering: truncate goes out before the cancel.
+        let types = sentTypes(transport)
+        let truncateIdx = try #require(types.firstIndex(of: "conversation.item.truncate"))
+        let cancelIdx = try #require(types.firstIndex(of: "response.cancel"))
+        #expect(truncateIdx < cancelIdx)
+    }
+
+    @Test func bargeInSkipsTruncateWhenEverythingWasPlayed() async throws {
+        let transport = MockRealtimeTransport()
+        let log = EventLog()
+        let session = session(transport)
+        await session.setPlaybackClock { 500 }   // clock ≥ received (100 ms) — stale or fully played
+        log.start(session)
+        try await session.start()
+
+        transport.push(responseCreated("r1"))
+        transport.push(audioDelta("r1", String(repeating: "x", count: 4_800)))
+        await eventually { log.audioCount == 1 }
+
+        transport.push(#"{"type":"input_audio_buffer.speech_started"}"#)
+        await eventually { sentTypes(transport).contains("response.cancel") }
+        // audio_end_ms greater than the actual duration is a server error (client-events spec) — never sent.
+        #expect(!sentTypes(transport).contains("conversation.item.truncate"))
+    }
+
+    @Test func bargeInWithoutAClockSendsNoTruncate() async throws {
+        let transport = MockRealtimeTransport()
+        let log = EventLog()
+        let session = session(transport)   // no setPlaybackClock
+        log.start(session)
+        try await session.start()
+
+        transport.push(responseCreated("r1"))
+        transport.push(audioDelta("r1", String(repeating: "x", count: 4_800)))
+        await eventually { log.audioCount == 1 }
+
+        transport.push(#"{"type":"input_audio_buffer.speech_started"}"#)
+        await eventually { sentTypes(transport).contains("response.cancel") }
+        #expect(!sentTypes(transport).contains("conversation.item.truncate"))
+    }
+
     @Test func noToolTurnSpeaksAndFinishes() async throws {
         let transport = MockRealtimeTransport()
         let log = EventLog()

@@ -141,6 +141,20 @@ enum RealtimeWire {
         frame(["type": .string("response.cancel")])
     }
 
+    /// `conversation.item.truncate` — barge-in step 3 (WebSocket transports manage playback, so the
+    /// client must tell the server how much was actually heard; the server drops the unplayed audio
+    /// AND its transcript). `content_index` is always `0` per the API reference. `audioEndMs` is
+    /// inclusive and MUST NOT exceed the item's actual audio duration (the server errors) — callers
+    /// enforce that via `AudioTruncationState`.
+    static func truncateItem(itemId: String, audioEndMs: Int) -> String {
+        frame([
+            "type": .string("conversation.item.truncate"),
+            "item_id": .string(itemId),
+            "content_index": .int(0),
+            "audio_end_ms": .int(audioEndMs),
+        ])
+    }
+
     // MARK: - Inbound
 
     /// Decode one inbound frame to a `ServerEvent`, or `nil` for events we don't handle.
@@ -238,7 +252,7 @@ enum RealtimeWire {
             return .audioTranscriptDone(responseId: event.responseId ?? "", text: event.transcript ?? "")
         }
         if type.hasSuffix("audio.delta") {
-            return .audioDelta(responseId: event.responseId ?? "", base64: event.delta ?? "")
+            return .audioDelta(responseId: event.responseId ?? "", itemId: event.itemId ?? "", base64: event.delta ?? "")
         }
         if type.hasSuffix("output_text.delta") || type == "response.text.delta" {
             return .outputTextDelta(responseId: event.responseId ?? "", text: event.delta ?? "")
@@ -255,6 +269,7 @@ enum RealtimeWire {
         let transcript: String?
         let text: String?
         let responseId: String?
+        let itemId: String?
         let callId: String?
         let name: String?
         let arguments: String?
@@ -265,6 +280,7 @@ enum RealtimeWire {
         enum CodingKeys: String, CodingKey {
             case type, delta, transcript, text, name, arguments, response, item, error
             case responseId = "response_id"
+            case itemId = "item_id"
             case callId = "call_id"
         }
 
@@ -320,7 +336,7 @@ enum ServerEvent: Sendable, Equatable {
     case functionCallArguments(responseId: String, callId: String, name: String?, arguments: String)
     case outputTextDelta(responseId: String, text: String)
     case outputTextDone(responseId: String, text: String)
-    case audioDelta(responseId: String, base64: String)
+    case audioDelta(responseId: String, itemId: String, base64: String)
     case audioTranscriptDelta(responseId: String, text: String)
     case audioTranscriptDone(responseId: String, text: String)
     case responseCreated(id: String, role: String?)

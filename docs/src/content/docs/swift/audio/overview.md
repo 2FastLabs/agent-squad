@@ -39,10 +39,13 @@ public protocol AudioOutput: Sendable {
     func enqueue(_ pcm16: Data) async
     func flush()                async
     func stop()                 async
+    func playedMilliseconds()   async -> Double?   // default implementation returns nil
 }
 ```
 
 `enqueue` schedules one PCM16 frame without waiting for it to finish playing — implementations must not serialize to real-time playback speed. `flush` is the barge-in primitive: it discards all queued or in-flight audio instantly.
+
+`playedMilliseconds` reports how much of the current playback burst was actually played; the session uses it on barge-in to send `conversation.item.truncate`, keeping the server's context aligned with what the user heard (the OpenAI WebSocket interruption procedure). It must survive `flush()` — the session samples it right after the cut. A protocol extension defaults it to `nil`, in which case truncation is skipped and everything else works unchanged.
 
 ---
 

@@ -45,6 +45,13 @@ public actor OpenAIGroundedVoiceAssistant: OpenAIRealtimeSession, VoiceAssistant
     private var presenterId: String?
     private var presenterResponses: Set<String> = []
     private var presenterActive = false
+    // Barge-in truncation: which audio item is playing + how much was sent, vs. the runtime's
+    // played-ms clock. NOT cleared by `resetTurn` — `interrupt()` reads it after resetting the turn.
+    // Only the in-band `direct` reply is truncatable: the presenter is out-of-band
+    // (`conversation: "none"`), its items never enter the conversation, and truncating one errors.
+    private var truncation = AudioTruncationState()
+    private var spokenResponseIsInBand = false
+    private var playbackClock: (@Sendable () async -> Double?)?
     // The turn's user question + spoken reply, captured for persistence. They survive `resetTurn`
     // because present()/speakDirectly() reset before the presenter speaks (the reset-before-await).
     private var pendingUserText = ""
@@ -111,6 +118,9 @@ public actor OpenAIGroundedVoiceAssistant: OpenAIRealtimeSession, VoiceAssistant
     public func sendAudio(_ pcm16: Data) async {
         try? await transport.send(RealtimeWire.appendAudio(pcm16.base64EncodedString()))
     }
+    public func setPlaybackClock(_ playedMilliseconds: @escaping @Sendable () async -> Double?) async {
+        playbackClock = playedMilliseconds
+    }
 
     // MARK: - Session seams
 
@@ -148,8 +158,14 @@ public actor OpenAIGroundedVoiceAssistant: OpenAIRealtimeSession, VoiceAssistant
         let wasActive = presenterActive
         presenterActive = false   // clear before the await so an interleaved frame sees the final state
         if wasActive {
+            // Barge-in step 3 (WebSocket): tell the server how much was actually heard so it drops
+            // the unplayed audio + transcript from context.
+            if let clock = playbackClock, let frame = truncation.truncateFrame(playedMs: await clock()) {
+                try? await transport.send(frame)
+            }
             try? await transport.send(RealtimeWire.cancelResponse())
         }
+        truncation.reset()
         // Always emit, even when nothing was playing (a fresh-turn speech_started also lands here) —
         // the consumer treats a flush-when-idle as a no-op.
         emit(.audioDone(interrupted: true))
@@ -177,8 +193,13 @@ public actor OpenAIGroundedVoiceAssistant: OpenAIRealtimeSession, VoiceAssistant
             if responseId == presenterId { emit(.presenterText(text, final: false)) } else { agentText += text }
         case .outputTextDone(let responseId, let text):
             if responseId == presenterId { replyText = text; emit(.presenterText(text, final: true)) }
-        case .audioDelta(let responseId, let base64):
-            if responseId == presenterId, let data = Data(base64Encoded: base64) { emit(.audio(data)) }
+        case .audioDelta(let responseId, let itemId, let base64):
+            if responseId == presenterId, let data = Data(base64Encoded: base64) {
+                if spokenResponseIsInBand {   // presenter is out-of-band — nothing to truncate server-side
+                    truncation.record(itemId: itemId, pcm16ByteCount: data.count, sampleRate: sampleRate)
+                }
+                emit(.audio(data))
+            }
         case .audioTranscriptDelta(let responseId, let text):
             if responseId == presenterId, modality.output == .audioAndText { emit(.presenterText(text, final: false)) }
         case .audioTranscriptDone(let responseId, let text):
@@ -196,6 +217,7 @@ public actor OpenAIGroundedVoiceAssistant: OpenAIRealtimeSession, VoiceAssistant
             if (role == "presenter" || role == "direct"), !id.isEmpty {
                 presenterResponses.insert(id)
                 presenterId = id
+                spokenResponseIsInBand = role == "direct"
             }
         case .responseDone(let id, let usage):
             await responseDone(id, usage: usage)
@@ -211,6 +233,7 @@ public actor OpenAIGroundedVoiceAssistant: OpenAIRealtimeSession, VoiceAssistant
             if id == presenterId {   // the response we're hearing finished cleanly
                 presenterId = nil
                 presenterActive = false
+                truncation.reset()   // clean finish — nothing left to truncate
                 let (user, reply) = (pendingUserText, replyText)   // snapshot + clear before the store await
                 // Record the spoken answer as a `presenter` generation (question in, reply out, presenter
                 // usage) under the turn, then close the turn. The gatherer's tool calls show as the turn's

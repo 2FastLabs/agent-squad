@@ -31,6 +31,7 @@ public final class VoiceProcessedAudioIO: AudioInput, AudioOutput, @unchecked Se
     private let sessionPolicy: AudioSessionPolicy
     private let configureEngine: (@Sendable (AVAudioEngine) throws -> Void)?
     private let lock = OSAllocatedUnfairLock()
+    private let clock = PlaybackClock()   // its own lock; callbacks never take `lock`
     private var isStarted = false   // guarded by `lock`
 
     /// `voiceProcessing` is non-optional here — raw capture defeats this class's purpose; use
@@ -122,16 +123,25 @@ public final class VoiceProcessedAudioIO: AudioInput, AudioOutput, @unchecked Se
 
     public func enqueue(_ pcm16: Data) async {
         guard let buffer = PCM16.floatBuffer(fromPCM16: pcm16, format: playbackFormat) else { return }
+        let durationMs = Double(buffer.frameLength) / playbackFormat.sampleRate * 1_000
         lock.withLockUnchecked {
             guard isStarted else { return }   // covers pre-start AND racing/after stop()
-            player.scheduleBuffer(buffer, completionHandler: nil)   // non-async overload: never await playback
+            let token = clock.willSchedule()
+            // Handler-based (non-async) overload: never await playback. `.dataPlayedBack` feeds the
+            // played-ms clock behind `playedMilliseconds()`.
+            player.scheduleBuffer(buffer, completionCallbackType: .dataPlayedBack) { [clock] _ in
+                clock.completed(durationMs: durationMs, token: token)
+            }
         }
     }
 
     public func flush() async {
         lock.withLockUnchecked {
             guard isStarted else { return }
-            // `stop()` discards all scheduled buffers — the instant barge-in cut — then re-arm for next.
+            // `stop()` discards all scheduled buffers — the instant barge-in cut — then re-arm for
+            // next. The clock keeps its played total (voiding only pending buffers) so the session
+            // can still sample it for `conversation.item.truncate`.
+            clock.flushed()
             player.stop()
             player.play()
         }
@@ -145,7 +155,12 @@ public final class VoiceProcessedAudioIO: AudioInput, AudioOutput, @unchecked Se
             // Halt the render thread BEFORE removing the tap so no tap block starts mid-teardown.
             engine.stop()
             engine.inputNode.removeTap(onBus: 0)
+            clock.reset()
             continuation.finish()
         }
+    }
+
+    public func playedMilliseconds() async -> Double? {
+        clock.milliseconds()
     }
 }

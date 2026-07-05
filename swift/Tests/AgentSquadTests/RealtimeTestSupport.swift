@@ -195,8 +195,9 @@ func responseCreated(_ id: String, role: String? = nil) -> String {
     return #"{"type":"response.created","response":{"id":"\#(id)"}}"#   // the gatherer/agent turn — no role
 }
 
-func audioDelta(_ id: String, _ bytes: String) -> String {
-    #"{"type":"response.output_audio.delta","response_id":"\#(id)","delta":"\#(Data(bytes.utf8).base64EncodedString())"}"#
+func audioDelta(_ id: String, _ bytes: String, item: String = "item_1") -> String {
+    // `item_id` is required on the real event (see reference/server-events.md).
+    #"{"type":"response.output_audio.delta","response_id":"\#(id)","item_id":"\#(item)","delta":"\#(Data(bytes.utf8).base64EncodedString())"}"#
 }
 
 func userSaid(_ text: String) -> String {

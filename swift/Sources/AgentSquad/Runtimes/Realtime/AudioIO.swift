@@ -19,4 +19,13 @@ public protocol AudioOutput: Sendable {
     /// Drop all queued/playing audio immediately (barge-in cut).
     func flush() async
     func stop() async
+    /// Milliseconds actually played of the current playback burst (a burst starts when audio is
+    /// enqueued onto an empty queue), or `nil` when the implementation can't measure playback.
+    /// Must survive `flush()` — the session samples it right after a barge-in cut to send
+    /// `conversation.item.truncate`. Default: `nil` (truncation is skipped).
+    func playedMilliseconds() async -> Double?
+}
+
+public extension AudioOutput {
+    func playedMilliseconds() async -> Double? { nil }
 }

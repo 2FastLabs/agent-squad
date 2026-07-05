@@ -124,6 +124,13 @@ signatures live in `Sources/AgentSquad/`.
   pattern-scrub PII — supply a custom `Redactor` for that.
 - **Realtime** is a peer runtime, not an agent; its `events` stream is non-throwing; needs
   `NSMicrophoneUsageDescription`; always `stop()`.
+- **Barge-in truncation**: on interrupt the session sends `conversation.item.truncate` so the
+  server drops the unheard audio + transcript from context (OpenAI docs' WebSocket procedure).
+  Automatic when wired by `RealtimeRuntime` with the built-in outputs; a custom `AudioOutput`
+  gets it by implementing `playedMilliseconds()` (protocol default returns `nil` → truncation
+  is skipped, everything else works). Applies to in-band spoken replies only — the grounded
+  presenter is out-of-band (`conversation: "none"`), its items never enter the conversation,
+  so interrupting it deliberately sends no truncate.
 - **Voice processing (AEC)**: on by default; if it can't be enabled `start()` throws
   `.voiceProcessingUnavailable` (degrade deliberately with `MicCapture(voiceProcessing: nil)`).
   For guaranteed echo cancellation use `VoiceProcessedAudioIO` and pass the **same instance** as

@@ -68,6 +68,55 @@ import Testing
         #expect(log.states.last == .listening)
     }
 
+    @Test func presenterBargeInSendsNoTruncate() async throws {
+        // The presenter is out-of-band (`conversation: "none"`) — its items never enter the
+        // conversation, so truncating one is a server error. Barge-in must skip the frame.
+        let transport = MockRealtimeTransport()
+        let log = EventLog()
+        let session = session(transport, tools: oddsTools())
+        await session.setPlaybackClock { 40 }
+        log.start(session)
+        try await session.start()
+
+        // Drive a real grounded turn so the presenter is active (tool → settle → present).
+        transport.push(funcArgs("r1", "c1", "odds"))
+        transport.push(responseDone("r1"))
+        transport.push(responseDone("r2"))
+        await eventually { transport.sent.contains { $0.contains("\"role\":\"presenter\"") } }
+        transport.push(responseCreated("p1", role: "presenter"))
+        transport.push(audioDelta("p1", String(repeating: "x", count: 4_800)))   // 100 ms received
+        await eventually { log.audioCount == 1 }
+
+        transport.push(#"{"type":"input_audio_buffer.speech_started"}"#)
+        await eventually { sentTypes(transport).contains("response.cancel") }
+        #expect(!sentTypes(transport).contains("conversation.item.truncate"))
+    }
+
+    @Test func directReplyBargeInTruncatesTheHeardPortion() async throws {
+        // The direct (no-tool) reply is in-band — barge-in truncates like the plain assistant.
+        let transport = MockRealtimeTransport()
+        let log = EventLog()
+        let session = session(transport, tools: oddsTools())
+        await session.setPlaybackClock { 40 }
+        log.start(session)
+        try await session.start()
+
+        // Agent settles with no tools but with text → speakDirectly() creates the direct reply.
+        transport.push(responseCreated("r1"))
+        transport.push(#"{"type":"response.output_text.delta","response_id":"r1","delta":"hi"}"#)
+        transport.push(responseDone("r1"))
+        await eventually { transport.sent.contains { $0.contains("\"role\":\"direct\"") } }
+        transport.push(responseCreated("d1", role: "direct"))
+        transport.push(audioDelta("d1", String(repeating: "x", count: 4_800), item: "item_3"))
+        await eventually { log.audioCount == 1 }
+
+        transport.push(#"{"type":"input_audio_buffer.speech_started"}"#)
+        await eventually { sentTypes(transport).contains("response.cancel") }
+        let frame = try #require(transport.sent.first { $0.contains("conversation.item.truncate") })
+        #expect(frame.contains(#""item_id":"item_3""#))
+        #expect(frame.contains(#""audio_end_ms":40"#))
+    }
+
     @Test func agentTextIsAccumulatedNotEmittedWhileNoPresenterIsActive() async throws {
         let transport = MockRealtimeTransport()
         let log = EventLog()

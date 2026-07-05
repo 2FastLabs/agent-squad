@@ -46,6 +46,10 @@ public actor OpenAIVoiceAssistant: OpenAIRealtimeSession, VoiceAssistant {
     private var liveResponses: Set<String> = []
     private var currentResponseId: String?
     private var isSpeaking = false
+    // Barge-in truncation: which audio item is playing + how much was sent, vs. the runtime's
+    // played-ms clock. NOT cleared by `resetTurn` — `interrupt()` reads it after resetting the turn.
+    private var truncation = AudioTruncationState()
+    private var playbackClock: (@Sendable () async -> Double?)?
 
     var sessionSpan: (any SpanHandle)?
     var turnSpan: (any SpanHandle)?
@@ -100,6 +104,9 @@ public actor OpenAIVoiceAssistant: OpenAIRealtimeSession, VoiceAssistant {
     public func sendAudio(_ pcm16: Data) async {
         try? await transport.send(RealtimeWire.appendAudio(pcm16.base64EncodedString()))
     }
+    public func setPlaybackClock(_ playedMilliseconds: @escaping @Sendable () async -> Double?) async {
+        playbackClock = playedMilliseconds
+    }
 
     // MARK: - Session seams
 
@@ -140,8 +147,14 @@ public actor OpenAIVoiceAssistant: OpenAIRealtimeSession, VoiceAssistant {
         let wasSpeaking = isSpeaking
         isSpeaking = false             // clear before the await so an interleaved frame sees the final state
         if wasSpeaking {
+            // Barge-in step 3 (WebSocket): tell the server how much was actually heard so it drops
+            // the unplayed audio + transcript from context.
+            if let clock = playbackClock, let frame = truncation.truncateFrame(playedMs: await clock()) {
+                try? await transport.send(frame)
+            }
             try? await transport.send(RealtimeWire.cancelResponse())
         }
+        truncation.reset()
         emit(.audioDone(interrupted: true))
         emit(.state(.listening))
     }
@@ -167,8 +180,11 @@ public actor OpenAIVoiceAssistant: OpenAIRealtimeSession, VoiceAssistant {
             if responseId == currentResponseId { emit(.presenterText(text, final: false)) }
         case .outputTextDone(let responseId, let text):
             if responseId == currentResponseId { replyText = text; emit(.presenterText(text, final: true)) }
-        case .audioDelta(let responseId, let base64):
-            if responseId == currentResponseId, let data = Data(base64Encoded: base64) { emit(.audio(data)) }
+        case .audioDelta(let responseId, let itemId, let base64):
+            if responseId == currentResponseId, let data = Data(base64Encoded: base64) {
+                truncation.record(itemId: itemId, pcm16ByteCount: data.count, sampleRate: sampleRate)
+                emit(.audio(data))
+            }
         case .audioTranscriptDelta(let responseId, let text):
             if responseId == currentResponseId, modality.output == .audioAndText { emit(.presenterText(text, final: false)) }
         case .audioTranscriptDone(let responseId, let text):
@@ -209,6 +225,7 @@ public actor OpenAIVoiceAssistant: OpenAIRealtimeSession, VoiceAssistant {
         guard id == currentResponseId else { return }
         currentResponseId = nil
         isSpeaking = false
+        truncation.reset()   // clean finish — nothing left to truncate
         // Snapshot the pair before the store await — a next turn interleaving during it (e.g. a typed
         // `sendText`) would otherwise have its captured state wiped by resetTurn.
         let (user, reply) = (userText, replyText)
