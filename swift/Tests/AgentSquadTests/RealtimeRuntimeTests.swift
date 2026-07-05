@@ -15,18 +15,23 @@ import Testing
         private var _sentText: [String] = []
         private var _interrupts = 0
         private var _stopped = false
+        private var _clock: (@Sendable () async -> Double?)?
 
         init() { (events, cont) = AsyncStream.makeStream(of: RealtimeEvent.self) }
         var sentAudio: [Data] { lock.withLock { _sentAudio } }
         var sentText: [String] { lock.withLock { _sentText } }
         var interrupts: Int { lock.withLock { _interrupts } }
         var stopped: Bool { lock.withLock { _stopped } }
+        var clock: (@Sendable () async -> Double?)? { lock.withLock { _clock } }
 
         func start() async throws {}
         func sendAudio(_ pcm16: Data) async { lock.withLock { _sentAudio.append(pcm16) } }
         func sendText(_ text: String) async { lock.withLock { _sentText.append(text) } }
         func interrupt() async { lock.withLock { _interrupts += 1 }; cont.yield(.audioDone(interrupted: true)) }
         func stop() async { lock.withLock { _stopped = true }; cont.finish() }
+        func setPlaybackClock(_ playedMilliseconds: @escaping @Sendable () async -> Double?) async {
+            lock.withLock { _clock = playedMilliseconds }
+        }
         func push(_ event: RealtimeEvent) { cont.yield(event) }
     }
 
@@ -47,13 +52,16 @@ import Testing
         private var _enqueued: [Data] = []
         private var _flushes = 0
         private var _stopped = false
+        private var _calls: [String] = []   // ordering assertions (flush vs played)
         var enqueued: [Data] { lock.withLock { _enqueued } }
         var flushes: Int { lock.withLock { _flushes } }
         var stopped: Bool { lock.withLock { _stopped } }
+        var calls: [String] { lock.withLock { _calls } }
         func start() async throws {}
         func enqueue(_ pcm16: Data) async { lock.withLock { _enqueued.append(pcm16) } }
-        func flush() async { lock.withLock { _flushes += 1 } }
+        func flush() async { lock.withLock { _flushes += 1; _calls.append("flush") } }
         func stop() async { lock.withLock { _stopped = true } }
+        func playedMilliseconds() async -> Double? { lock.withLock { _calls.append("played") }; return 42 }
     }
 
     private final class EventLog: @unchecked Sendable {
@@ -101,6 +109,18 @@ import Testing
     }
 
     // MARK: - Tests
+
+    @Test func installedPlaybackClockSamplesThenCutsPlayback() async throws {
+        // Sample BEFORE the flush: a flush re-arms the burst, so a stale pump enqueue racing in
+        // after it would zero the total. The cut still happens inside the closure — before the
+        // session sends the truncate frame (the docs' stop-before-truncate).
+        let (runtime, session, _, output) = make()
+        try await runtime.start()
+        let clock = try #require(session.clock)
+        let played = await clock()
+        #expect(played == 42)
+        #expect(output.calls == ["played", "flush"])
+    }
 
     @Test func forwardsMicFramesToSession() async throws {
         let (runtime, session, input, _) = make()

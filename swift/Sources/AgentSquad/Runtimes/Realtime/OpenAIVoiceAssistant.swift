@@ -147,8 +147,8 @@ public actor OpenAIVoiceAssistant: OpenAIRealtimeSession, VoiceAssistant {
         let wasSpeaking = isSpeaking
         isSpeaking = false             // clear before the await so an interleaved frame sees the final state
         if wasSpeaking {
-            // Barge-in step 3 (WebSocket): tell the server how much was actually heard so it drops
-            // the unplayed audio + transcript from context.
+            // Barge-in steps 2+3 (WebSocket): the clock closure reports what was heard and cuts
+            // playback; the truncate then lets the server drop the unplayed audio + transcript.
             if let clock = playbackClock, let frame = truncation.truncateFrame(playedMs: await clock()) {
                 try? await transport.send(frame)
             }

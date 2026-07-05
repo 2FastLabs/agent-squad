@@ -87,6 +87,18 @@ import AgentSquad
         #expect(clock.milliseconds() == 40)   // the played total survives the flush for sampling
     }
 
+    @Test func staleEnqueueAfterFlushZeroesTheTotal() {
+        // Why the runtime's clock closure samples BEFORE it flushes: a flush re-arms the burst,
+        // and any stale enqueue racing in afterwards starts a new one, wiping the played total.
+        let clock = PlaybackClock()
+        let t = clock.willSchedule()
+        clock.completed(durationMs: 40, token: t)
+        clock.flushed()
+        #expect(clock.milliseconds() == 40)   // survives the flush…
+        _ = clock.willSchedule()              // …until a stale enqueue lands
+        #expect(clock.milliseconds() == 0)
+    }
+
     @Test func playbackClockUnderReportsAfterAMidResponseStall() {
         // Queue drains mid-response (stall) → the next buffer starts a new burst and the total
         // restarts. Deliberate: truncation then under-reports, which never claims unheard audio

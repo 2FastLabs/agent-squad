@@ -81,11 +81,12 @@ public protocol VoiceAssistant: Sendable {
     var events: AsyncStream<RealtimeEvent> { get }
     /// Close the connection.
     func stop() async
-    /// Install a playback clock: how many milliseconds of assistant audio were actually played
-    /// (`nil` = unmeasurable). With WebSocket transports the client manages playback, so on
-    /// barge-in the session uses this to send `conversation.item.truncate` — keeping the server's
-    /// context aligned with what the user heard. `RealtimeRuntime` installs it at `start()`.
-    /// Optional: the default is a no-op, and sessions without a clock skip truncation.
+    /// Install a playback clock the session invokes on barge-in: the closure reports how many
+    /// milliseconds of assistant audio were actually played (`nil` = unmeasurable) and CUTS
+    /// playback before returning — so by the time the session sends `conversation.item.truncate`
+    /// the audio has stopped (the OpenAI procedure: stop playback, note how much was played,
+    /// truncate). `RealtimeRuntime` installs it at `start()` as sample + flush. Optional: the
+    /// default is a no-op, and sessions without a clock skip truncation.
     func setPlaybackClock(_ playedMilliseconds: @escaping @Sendable () async -> Double?) async
 }
 

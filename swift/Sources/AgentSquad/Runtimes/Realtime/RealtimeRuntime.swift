@@ -29,7 +29,17 @@ public actor RealtimeRuntime {
     public func start() async throws {
         // Wire the output's played-ms clock into the session so barge-in can send
         // `conversation.item.truncate` (WebSocket transports: the client manages playback).
-        await session.setPlaybackClock { [output] in await output.playedMilliseconds() }
+        // Sample THEN cut: a flush re-arms the burst, so a stale pump `enqueue` racing in after
+        // it would zero the total — sampling first makes the measurement immune to that, and the
+        // cut still lands here, before the session sends the truncate frame (the docs' stop-
+        // before-truncate). On server-VAD barge-in this is the earliest possible cut (the
+        // session hasn't emitted `.audioDone` yet); on app-initiated interrupt the runtime
+        // already flushed and this one is an idempotent repeat.
+        await session.setPlaybackClock { [output] in
+            let played = await output.playedMilliseconds()
+            await output.flush()
+            return played
+        }
         try await output.start()
         try await session.start()
         try await input.start()
@@ -51,9 +61,9 @@ public actor RealtimeRuntime {
 
     /// Explicit barge-in (e.g. a stop button) — cuts playback and stops the in-flight response.
     public func interrupt() async {
-        // Flush eagerly for latency (don't wait the server round-trip). The session's own
-        // `interrupt()` then emits `.audioDone(interrupted: true)`, which `route` flushes again — a
-        // harmless idempotent repeat that also covers server-initiated barge-in. Keep both.
+        // Flush eagerly for latency, and because a custom session without a playback clock never
+        // flushes on its own. The session's clock closure (sample + flush) and the
+        // `.audioDone(interrupted: true)` route are idempotent repeats. Keep all three.
         await output.flush()
         await session.interrupt()
     }

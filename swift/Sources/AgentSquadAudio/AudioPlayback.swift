@@ -1,19 +1,22 @@
 import AVFoundation
 import AgentSquad
+import os
 
 /// `AudioOutput` over `AVAudioEngine` + `AVAudioPlayerNode`: schedules incoming PCM16 @ 24 kHz frames
 /// (converted to float) for playback; `flush` stops and clears the queue for an instant barge-in cut.
 ///
-/// `@unchecked Sendable`: not safe to call concurrently — callers must serialize. `RealtimeRuntime`
-/// satisfies this by driving every method from its single event pump, so the engine/player are
-/// never touched concurrently.
+/// `@unchecked Sendable`: `enqueue`/`flush`/`stop` are serialized by an internal unfair lock —
+/// the session's barge-in playback clock flushes from its own task, concurrent with the runtime
+/// pump's `enqueue`. `start()` must not be called concurrently with itself (the runtime awaits
+/// it before any pump runs).
 public final class AudioPlayback: AudioOutput, @unchecked Sendable {
     private let engine = AVAudioEngine()
     private let player = AVAudioPlayerNode()
     private let format: AVAudioFormat
     private let sessionPolicy: AudioSessionPolicy
     private let configureEngine: (@Sendable (AVAudioEngine) throws -> Void)?
-    private let clock = PlaybackClock()
+    private let clock = PlaybackClock()   // its own lock; callbacks never take `lock`
+    private let lock = OSAllocatedUnfairLock()
     private var isStarted = false
 
     /// `configureEngine` runs after the player is attached/connected, before the engine starts —
@@ -30,7 +33,7 @@ public final class AudioPlayback: AudioOutput, @unchecked Sendable {
     }
 
     public func start() async throws {
-        guard !isStarted else { return }   // start-once: a second engine.attach(player) would crash
+        guard lock.withLockUnchecked({ !isStarted }) else { return }   // start-once: a second engine.attach(player) would crash
         #if os(iOS)
         try VoiceAudioSession.activate(policy: sessionPolicy)
         #endif
@@ -45,7 +48,7 @@ public final class AudioPlayback: AudioOutput, @unchecked Sendable {
             throw error
         }
         player.play()
-        isStarted = true
+        lock.withLockUnchecked { isStarted = true }
     }
 
     public func enqueue(_ pcm16: Data) async {
@@ -57,9 +60,11 @@ public final class AudioPlayback: AudioOutput, @unchecked Sendable {
     /// playback completion — that would serialize enqueue to real-time playback speed).
     private func schedule(_ buffer: AVAudioPCMBuffer) {
         let durationMs = Double(buffer.frameLength) / format.sampleRate * 1_000
-        let token = clock.willSchedule()
-        player.scheduleBuffer(buffer, completionCallbackType: .dataPlayedBack) { [clock] _ in
-            clock.completed(durationMs: durationMs, token: token)
+        lock.withLockUnchecked {
+            let token = clock.willSchedule()
+            player.scheduleBuffer(buffer, completionCallbackType: .dataPlayedBack) { [clock] _ in
+                clock.completed(durationMs: durationMs, token: token)
+            }
         }
     }
 
@@ -67,16 +72,20 @@ public final class AudioPlayback: AudioOutput, @unchecked Sendable {
         // `stop()` discards all scheduled buffers — the instant barge-in cut — then re-arm for next.
         // The clock keeps its played total (voiding only pending buffers) so the session can still
         // sample it for `conversation.item.truncate`.
-        clock.flushed()
-        player.stop()
-        player.play()
+        lock.withLockUnchecked {
+            clock.flushed()
+            player.stop()
+            player.play()
+        }
     }
 
     public func stop() async {
-        player.stop()
-        engine.stop()
-        clock.reset()
-        isStarted = false
+        lock.withLockUnchecked {
+            player.stop()
+            engine.stop()
+            clock.reset()
+            isStarted = false
+        }
     }
 
     public func playedMilliseconds() async -> Double? {
