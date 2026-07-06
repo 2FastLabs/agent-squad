@@ -46,6 +46,7 @@ export { AgentOverlapAnalyzer, AnalysisResult } from "./agentOverlapAnalyzer";
 export { ConversationMessage, ParticipantRole } from "./types"
 export { AgentTools, AgentTool} from "./utils/tool"
 export { isClassifierToolInput } from './utils/helpers'
+export { MCPToolProvider, MCPServerConfig } from './tools/mcpToolProvider'
 
 
 import { MAOTS_VERSION } from "./common/src/version";

@@ -46,6 +46,14 @@
     "prettier": "^3.3.3",
     "stopword": "^3.0.1"
   },
+  "peerDependencies": {
+    "@modelcontextprotocol/sdk": ">=1.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@modelcontextprotocol/sdk": {
+      "optional": true
+    }
+  },
   "devDependencies": {
     "@eslint/js": "^9.39.2",
     "@types/jest": "^29.5.12",
