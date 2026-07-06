@@ -82,7 +82,13 @@ export default defineConfig({
 								  ]
 								},
 								{ label: 'Custom Agents', link: '/agents/custom-agents' },
-								{ label: 'Tools for Agents', link: '/agents/tools' },
+								{
+									label: 'Tools for Agents',
+									items: [
+										{ label: 'Overview', link: '/agents/tools' },
+										{ label: 'MCP Tool Provider', link: '/agents/mcp-tool-provider' },
+									]
+								},
 
 							  ]
 							},

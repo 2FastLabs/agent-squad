@@ -1,0 +1,282 @@
+---
+title: MCP Tool Provider
+description: Connect MCP (Model Context Protocol) servers to any agent-squad agent as a drop-in tool source
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+`MCPToolProvider` is a drop-in replacement for `AgentTools` that connects one or more [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) servers to any agent-squad agent. Tools are fetched from the servers at runtime and exposed to the agent with no extra wiring — the existing `tool_config` / `toolConfig` mechanism handles everything.
+
+## How it works
+
+1. On the first tool use, `MCPToolProvider` connects to each configured MCP server and lists its tools.
+2. The tool schemas (already JSON Schema) are passed through directly to the agent's provider format (Bedrock, Anthropic, OpenAI).
+3. When the agent calls a tool, `MCPToolProvider` routes the call to the correct server and returns the result.
+4. Errors reported by the server (`isError: true`) are surfaced back to the model as an error string rather than crashing.
+
+Connections are lazy — nothing happens until the agent actually needs tools — and are reused for the lifetime of the provider instance.
+
+## Installation
+
+<Tabs syncKey="runtime">
+  <TabItem label="TypeScript" icon="seti:typescript" color="blue">
+```bash
+npm install agent-squad
+npm install @modelcontextprotocol/sdk
+```
+`@modelcontextprotocol/sdk` is a peer dependency — it is never installed automatically, only when you explicitly add it.
+  </TabItem>
+  <TabItem label="Python" icon="seti:python">
+```bash
+pip install "agent-squad[mcp]"
+```
+The `mcp` extra is optional — it is not pulled in when you install the base package.
+  </TabItem>
+</Tabs>
+
+## Basic usage
+
+<Tabs syncKey="runtime">
+  <TabItem label="TypeScript" icon="seti:typescript" color="blue">
+```typescript
+import { AgentSquad, BedrockLLMAgent, MCPToolProvider } from "agent-squad";
+
+const agent = new BedrockLLMAgent({
+  name: "mcp-agent",
+  description: "An agent that uses tools from an MCP server",
+  toolConfig: {
+    tool: new MCPToolProvider([
+      { type: "stdio", command: "uvx", args: ["my-mcp-server"] },
+    ]),
+  },
+});
+
+const orchestrator = new AgentSquad();
+orchestrator.addAgent(agent);
+```
+  </TabItem>
+  <TabItem label="Python" icon="seti:python">
+```python
+from agent_squad import AgentSquad
+from agent_squad.agents import BedrockLLMAgent, BedrockLLMAgentOptions
+from agent_squad.tools import MCPToolProvider, MCPServerConfig
+
+agent = BedrockLLMAgent(BedrockLLMAgentOptions(
+    name="mcp-agent",
+    description="An agent that uses tools from an MCP server",
+    tool_config={
+        "tool": MCPToolProvider([
+            MCPServerConfig(type="stdio", command="uvx", args=["my-mcp-server"]),
+        ])
+    }
+))
+
+orchestrator = AgentSquad()
+orchestrator.add_agent(agent)
+```
+  </TabItem>
+</Tabs>
+
+## Transports
+
+`MCPToolProvider` supports two transports.
+
+### stdio — spawn a local process
+
+The most common transport. Agent Squad launches the MCP server as a subprocess and communicates over stdin/stdout.
+
+<Tabs syncKey="runtime">
+  <TabItem label="TypeScript" icon="seti:typescript" color="blue">
+```typescript
+import { MCPToolProvider } from "agent-squad";
+
+const provider = new MCPToolProvider([
+  {
+    type: "stdio",
+    command: "uvx",
+    args: ["my-mcp-server", "--config", "config.json"],
+    env: { API_KEY: process.env.MY_API_KEY! },
+  },
+]);
+```
+  </TabItem>
+  <TabItem label="Python" icon="seti:python">
+```python
+from agent_squad.tools import MCPToolProvider, MCPServerConfig
+
+provider = MCPToolProvider([
+    MCPServerConfig(
+        type="stdio",
+        command="uvx",
+        args=["my-mcp-server", "--config", "config.json"],
+        env={"API_KEY": os.environ["MY_API_KEY"]},
+    )
+])
+```
+  </TabItem>
+</Tabs>
+
+### SSE — connect to a remote server
+
+Connect to an MCP server running over HTTP Server-Sent Events (SSE).
+
+<Tabs syncKey="runtime">
+  <TabItem label="TypeScript" icon="seti:typescript" color="blue">
+```typescript
+import { MCPToolProvider } from "agent-squad";
+
+const provider = new MCPToolProvider([
+  {
+    type: "sse",
+    url: "http://localhost:3000/sse",
+    headers: { Authorization: `Bearer ${process.env.MCP_TOKEN}` },
+  },
+]);
+```
+  </TabItem>
+  <TabItem label="Python" icon="seti:python">
+```python
+from agent_squad.tools import MCPToolProvider, MCPServerConfig
+
+provider = MCPToolProvider([
+    MCPServerConfig(
+        type="sse",
+        url="http://localhost:3000/sse",
+        headers={"Authorization": f"Bearer {os.environ['MCP_TOKEN']}"},
+    )
+])
+```
+  </TabItem>
+</Tabs>
+
+## Multiple servers
+
+You can connect to multiple MCP servers at once. Tools from all servers are merged into a single flat list. If two servers expose a tool with the same name, the first server's tool wins.
+
+<Tabs syncKey="runtime">
+  <TabItem label="TypeScript" icon="seti:typescript" color="blue">
+```typescript
+import { MCPToolProvider } from "agent-squad";
+
+const provider = new MCPToolProvider([
+  { type: "stdio", command: "uvx", args: ["filesystem-server"] },
+  { type: "stdio", command: "uvx", args: ["database-server"] },
+  { type: "sse",   url: "https://api.example.com/mcp" },
+]);
+```
+  </TabItem>
+  <TabItem label="Python" icon="seti:python">
+```python
+from agent_squad.tools import MCPToolProvider, MCPServerConfig
+
+provider = MCPToolProvider([
+    MCPServerConfig(type="stdio", command="uvx", args=["filesystem-server"]),
+    MCPServerConfig(type="stdio", command="uvx", args=["database-server"]),
+    MCPServerConfig(type="sse",   url="https://api.example.com/mcp"),
+])
+```
+  </TabItem>
+</Tabs>
+
+## Using with any agent
+
+`MCPToolProvider` works with every agent that accepts `AgentTools` — just drop it in as the `tool` value.
+
+<Tabs syncKey="runtime">
+  <TabItem label="TypeScript" icon="seti:typescript" color="blue">
+```typescript
+import { AnthropicAgent, OpenAIAgent, MCPToolProvider } from "agent-squad";
+
+const mcpTools = new MCPToolProvider([
+  { type: "stdio", command: "uvx", args: ["my-mcp-server"] },
+]);
+
+// Anthropic
+const anthropicAgent = new AnthropicAgent({
+  name: "anthropic-agent",
+  description: "Agent with MCP tools",
+  apiKey: process.env.ANTHROPIC_API_KEY!,
+  toolConfig: { tool: mcpTools },
+});
+
+// OpenAI
+const openaiAgent = new OpenAIAgent({
+  name: "openai-agent",
+  description: "Agent with MCP tools",
+  apiKey: process.env.OPENAI_API_KEY!,
+  toolConfig: { tool: mcpTools },
+});
+```
+  </TabItem>
+  <TabItem label="Python" icon="seti:python">
+```python
+from agent_squad.agents import AnthropicAgent, AnthropicAgentOptions
+from agent_squad.agents import OpenAIAgent, OpenAIAgentOptions
+from agent_squad.tools import MCPToolProvider, MCPServerConfig
+
+mcp_tools = MCPToolProvider([
+    MCPServerConfig(type="stdio", command="uvx", args=["my-mcp-server"]),
+])
+
+# Anthropic
+anthropic_agent = AnthropicAgent(AnthropicAgentOptions(
+    name="anthropic-agent",
+    description="Agent with MCP tools",
+    api_key=os.environ["ANTHROPIC_API_KEY"],
+    tool_config={"tool": mcp_tools},
+))
+
+# OpenAI
+openai_agent = OpenAIAgent(OpenAIAgentOptions(
+    name="openai-agent",
+    description="Agent with MCP tools",
+    api_key=os.environ["OPENAI_API_KEY"],
+    tool_config={"tool": mcp_tools},
+))
+```
+  </TabItem>
+</Tabs>
+
+## Configuration reference
+
+### MCPServerConfig
+
+<Tabs syncKey="runtime">
+  <TabItem label="TypeScript" icon="seti:typescript" color="blue">
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `type` | `"stdio" \| "sse"` | Yes | Transport type |
+| `command` | `string` | stdio only | Executable to launch |
+| `args` | `string[]` | No | Arguments for the command |
+| `env` | `Record<string, string>` | No | Environment variables for the subprocess |
+| `url` | `string` | sse only | Full URL of the SSE endpoint |
+| `headers` | `Record<string, string>` | No | HTTP headers for the SSE connection |
+  </TabItem>
+  <TabItem label="Python" icon="seti:python">
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `type` | `str` (`"stdio"` or `"sse"`) | Yes | Transport type |
+| `command` | `str` | stdio only | Executable to launch |
+| `args` | `list[str]` | No | Arguments for the command |
+| `env` | `dict[str, str]` | No | Environment variables for the subprocess |
+| `url` | `str` | sse only | Full URL of the SSE endpoint |
+| `headers` | `dict[str, str]` | No | HTTP headers for the SSE connection |
+  </TabItem>
+</Tabs>
+
+### MCPToolProvider
+
+<Tabs syncKey="runtime">
+  <TabItem label="TypeScript" icon="seti:typescript" color="blue">
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `servers` | `MCPServerConfig[]` | Yes | List of MCP servers to connect to |
+| `callbacks` | `AgentToolCallbacks` | No | Lifecycle hooks for tool start/end/error |
+  </TabItem>
+  <TabItem label="Python" icon="seti:python">
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `servers` | `list[MCPServerConfig]` | Yes | List of MCP servers to connect to |
+| `callbacks` | `AgentToolCallbacks` | No | Lifecycle hooks for tool start/end/error |
+  </TabItem>
+</Tabs>
