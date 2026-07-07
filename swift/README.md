@@ -312,6 +312,30 @@ keeps what the user actually heard. The built-in outputs measure this automatica
 > `duckingLevel: .min` to compensate. Never enable voice processing on the playback engine; it
 > belongs on capture only.
 
+## Reasoning effort (reasoning Realtime models)
+
+Reasoning-capable Realtime models (e.g. `gpt-realtime-2`) can "think" before each response; how
+much is a tunable — `RealtimeReasoningEffort`: `.minimal`/`.low`/`.medium`/`.high`/`.xhigh`
+(server default `.low`). `OpenAIVoiceAssistant` exposes it at two levels:
+
+```swift
+let assistant = OpenAIVoiceAssistant(
+    name: "advisor", transport: transport, tools: tools,
+    userId: "u1", sessionId: "s1",
+    reasoning: .low,                                    // session default for every response
+    toolReasoningEffort: ["get_insights": .medium]      // per-tool escalation (see below)
+)
+```
+
+`toolReasoningEffort` solves a latency/depth dilemma: you rarely know a turn needs deep reasoning
+*before* it starts — but the turn reveals itself by the tools it calls. When a turn calls a listed
+tool, every **subsequent** response of that turn is created with the mapped effort (highest wins
+if several match), so the response that *synthesizes* a heavyweight tool's payload thinks harder
+while quick lookups keep the session default. The escalation is per turn and resets when the turn
+completes.
+
+Leave both unset for non-reasoning models (e.g. `gpt-realtime-1.5`) — nothing is sent on the wire.
+
 ## Architecture
 
 Two peer runtimes share one set of contracts but not a control loop: a turn-based `Orchestrator`

@@ -49,6 +49,27 @@ public enum RealtimeTurnDetection: Sendable, Equatable {
     }
 }
 
+/// Reasoning effort for reasoning-capable Realtime models (e.g. `gpt-realtime-2`) — how much the
+/// model "thinks" before producing a response. The server default is `low`. Settable at the session
+/// level and per response (`response.create` overrides the session for that one response).
+/// Non-reasoning models (e.g. `gpt-realtime-1.5`) don't support it — leave unset there.
+/// `Comparable` by depth so callers can take the max of several requested efforts.
+public enum RealtimeReasoningEffort: String, Sendable, Equatable, Comparable {
+    case minimal, low, medium, high, xhigh
+
+    private var depth: Int {
+        switch self {
+        case .minimal: return 0
+        case .low: return 1
+        case .medium: return 2
+        case .high: return 3
+        case .xhigh: return 4
+        }
+    }
+
+    public static func < (lhs: Self, rhs: Self) -> Bool { lhs.depth < rhs.depth }
+}
+
 /// An event from a realtime voice session. Its **own** type, deliberately not `AgentEvent`:
 /// continuous audio, server-driven turn boundaries and barge-in don't fit the turn-based contract.
 /// Errors arrive in-band as `.error`, so the stream is non-throwing.

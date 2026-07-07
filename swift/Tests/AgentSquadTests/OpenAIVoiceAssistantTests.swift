@@ -429,4 +429,88 @@ import Testing
         await session.stop()
         #expect(transport.closed)
     }
+
+    // MARK: - Reasoning effort
+
+    private func reasoningEffort(of frame: String) -> String? {
+        guard let obj = try? JSONSerialization.jsonObject(with: Data(frame.utf8)) as? [String: Any],
+              let response = obj["response"] as? [String: Any],
+              let reasoning = response["reasoning"] as? [String: Any] else { return nil }
+        return reasoning["effort"] as? String
+    }
+
+    @Test func configuredToolEscalatesTheContinuationReasoning() async throws {
+        let transport = MockRealtimeTransport()
+        let session = OpenAIVoiceAssistant(name: "voice", transport: transport, tools: oddsTools(),
+                                           userId: "u1", sessionId: "s1",
+                                           toolReasoningEffort: ["odds": .medium])
+        try await session.start()
+
+        await session.sendText("should I bet on PSG?")
+        transport.push(responseCreated("r1"))
+        transport.push(funcArgs("r1", "c1", "odds"))     // the configured tool runs
+        transport.push(responseDone("r1"))               // → continuation
+
+        await eventually { sentTypes(transport).filter { $0 == "response.create" }.count >= 2 }
+        let creates = transport.sent.filter { frameType(of: $0) == "response.create" }
+        // The initial response runs at the session default; the response that synthesizes the
+        // tool's payload thinks at the configured effort.
+        #expect(reasoningEffort(of: creates[0]) == nil)
+        #expect(reasoningEffort(of: try #require(creates.last)) == "medium")
+    }
+
+    @Test func reasoningEscalationIsTurnStickyAndResetsOnTheNextTurn() async throws {
+        let transport = MockRealtimeTransport()
+        let session = OpenAIVoiceAssistant(name: "voice", transport: transport, tools: oddsTools(),
+                                           userId: "u1", sessionId: "s1",
+                                           toolReasoningEffort: ["odds": .medium])
+        try await session.start()
+
+        await session.sendText("should I bet on PSG?")
+        transport.push(responseCreated("r1"))
+        transport.push(funcArgs("r1", "c1", "odds"))     // escalates the turn
+        transport.push(responseDone("r1"))               // continuation 1
+        transport.push(responseCreated("r2"))
+        transport.push(funcArgs("r2", "c2", "odds"))     // a second tool round, same turn
+        transport.push(responseDone("r2"))               // continuation 2
+        transport.push(responseCreated("r3"))
+        transport.push(responseDone("r3"))               // no tools → turn complete, escalation resets
+
+        await eventually { sentTypes(transport).filter { $0 == "response.create" }.count >= 3 }
+        await session.sendText("and the score?")         // a fresh turn
+        await eventually { sentTypes(transport).filter { $0 == "response.create" }.count >= 4 }
+
+        let creates = transport.sent.filter { frameType(of: $0) == "response.create" }
+        #expect(reasoningEffort(of: creates[1]) == "medium")   // sticky across the turn's rounds…
+        #expect(reasoningEffort(of: creates[2]) == "medium")
+        #expect(reasoningEffort(of: creates[3]) == nil)        // …but never leaks into the next turn
+    }
+
+    @Test func unconfiguredToolLeavesTheContinuationAtTheSessionDefault() async throws {
+        let transport = MockRealtimeTransport()
+        let session = session(transport)   // no toolReasoningEffort
+        try await session.start()
+
+        transport.push(responseCreated("r1"))
+        transport.push(funcArgs("r1", "c1", "odds"))
+        transport.push(responseDone("r1"))
+
+        await eventually { sentTypes(transport).contains("response.create") }
+        let creates = transport.sent.filter { frameType(of: $0) == "response.create" }
+        #expect(creates.allSatisfy { reasoningEffort(of: $0) == nil })   // wire unchanged for existing users
+    }
+
+    @Test func sessionLevelReasoningRidesTheSessionUpdate() async throws {
+        let transport = MockRealtimeTransport()
+        let session = OpenAIVoiceAssistant(name: "voice", transport: transport, tools: oddsTools(),
+                                           userId: "u1", sessionId: "s1", reasoning: .high)
+        try await session.start()
+
+        await eventually { sentTypes(transport).contains("session.update") }
+        let update = try #require(transport.sent.first { $0.contains("session.update") })
+        let obj = try #require(try? JSONSerialization.jsonObject(with: Data(update.utf8)) as? [String: Any])
+        let sess = try #require(obj["session"] as? [String: Any])
+        let reasoning = try #require(sess["reasoning"] as? [String: Any])
+        #expect(reasoning["effort"] as? String == "high")
+    }
 }

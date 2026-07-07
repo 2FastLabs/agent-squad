@@ -30,6 +30,8 @@ public actor OpenAIVoiceAssistant: OpenAIRealtimeSession, VoiceAssistant {
     nonisolated let sampleRate: Int
     private let transcriptionModel: String
     private let turnDetection: RealtimeTurnDetection
+    private let reasoning: RealtimeReasoningEffort?
+    private let toolReasoningEffort: [String: RealtimeReasoningEffort]
     private let sessionOverrides: [String: JSONValue]
 
     // Per-turn state (cleared by `resetTurn`).
@@ -40,6 +42,10 @@ public actor OpenAIVoiceAssistant: OpenAIRealtimeSession, VoiceAssistant {
     // A typed turn (`sendText`) replies text-only — so we don't announce `.speaking`, and the
     // tool→continue response stays text-only too.
     private var currentTurnIsTextOnly = false
+    // Turn-sticky reasoning escalation: once a turn calls a tool listed in `toolReasoningEffort`,
+    // every subsequent response of that turn is created with the mapped effort (highest wins) —
+    // the synthesis of a heavyweight tool's payload may span several tool→continue rounds.
+    private var turnReasoningEffort: RealtimeReasoningEffort?
     // Audio-relay gating: the spoken response is the bare agent turn, so track the current agent
     // response id and relay its audio, re-pointing on every `response.created` across the
     // tool→continue loop. On barge-in `currentResponseId` is cleared so late audio drops.
@@ -74,6 +80,8 @@ public actor OpenAIVoiceAssistant: OpenAIRealtimeSession, VoiceAssistant {
         sampleRate: Int = 24_000,
         transcriptionModel: String = "gpt-4o-mini-transcribe",
         turnDetection: RealtimeTurnDetection = .semanticVAD(),
+        reasoning: RealtimeReasoningEffort? = nil,
+        toolReasoningEffort: [String: RealtimeReasoningEffort] = [:],
         sessionOverrides: [String: JSONValue] = [:]
     ) {
         self.name = name
@@ -93,6 +101,8 @@ public actor OpenAIVoiceAssistant: OpenAIRealtimeSession, VoiceAssistant {
         self.sampleRate = sampleRate
         self.transcriptionModel = transcriptionModel
         self.turnDetection = turnDetection
+        self.reasoning = reasoning
+        self.toolReasoningEffort = toolReasoningEffort
         self.sessionOverrides = sessionOverrides
         (self.events, self.continuation) = AsyncStream.makeStream(of: RealtimeEvent.self)
     }
@@ -115,13 +125,19 @@ public actor OpenAIVoiceAssistant: OpenAIRealtimeSession, VoiceAssistant {
         RealtimeWire.sessionUpdate(
             model: model, instructions: instructions, voice: voice,
             language: language, tools: tools, sampleRate: sampleRate, agentOutput: modality.output,
-            transcriptionModel: transcriptionModel, turnDetection: turnDetection, overrides: sessionOverrides
+            transcriptionModel: transcriptionModel, turnDetection: turnDetection,
+            reasoning: reasoning, overrides: sessionOverrides
         )
     }
 
     func afterToolResult(name: String, result: ToolResult) {
         // A tool may advertise UI — surface it as a widget alongside the spoken reply.
         if let payload = result.ui { emit(.widget(payload)) }
+        // A configured tool escalates the rest of the turn's responses to its reasoning effort —
+        // the response that SYNTHESIZES this tool's payload is where the extra thinking pays off.
+        if let effort = toolReasoningEffort[name] {
+            turnReasoningEffort = max(turnReasoningEffort ?? effort, effort)
+        }
     }
 
     // MARK: - VoiceAssistant (turn brain)
@@ -217,8 +233,12 @@ public actor OpenAIVoiceAssistant: OpenAIRealtimeSession, VoiceAssistant {
         liveResponses.remove(id)
         if let calls = callsPerResponse[id], calls > 0 {    // this response called tools → continue the turn
             callsPerResponse[id] = nil
-            // Keep the continue response in the turn's modality — a typed turn stays text-only.
-            try? await transport.send(currentTurnIsTextOnly ? RealtimeWire.createResponse(output: .text) : RealtimeWire.createResponse())
+            // Keep the continue response in the turn's modality — a typed turn stays text-only —
+            // and carry the turn's escalated reasoning effort, if a configured tool set one.
+            try? await transport.send(RealtimeWire.createResponse(
+                output: currentTurnIsTextOnly ? .text : nil,
+                reasoning: turnReasoningEffort
+            ))
             return
         }
         // A response that called no tools is the spoken answer — the turn is complete.
@@ -265,6 +285,7 @@ public actor OpenAIVoiceAssistant: OpenAIRealtimeSession, VoiceAssistant {
         callsPerResponse.removeAll()
         fnNames.removeAll()
         currentTurnIsTextOnly = false   // next turn defaults to the session modality unless `sendText` opts in
+        turnReasoningEffort = nil       // reasoning escalation is per turn
         // liveResponses / currentResponseId / isSpeaking are managed by responseDone / interrupt.
     }
 

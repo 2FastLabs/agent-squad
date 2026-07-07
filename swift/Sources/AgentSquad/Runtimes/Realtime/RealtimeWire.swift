@@ -21,6 +21,7 @@ enum RealtimeWire {
         agentOutput: RealtimeModality.Output = .text,
         transcriptionModel: String = "gpt-4o-mini-transcribe",
         turnDetection: RealtimeTurnDetection = .semanticVAD(),
+        reasoning: RealtimeReasoningEffort? = nil,
         overrides: [String: JSONValue] = [:]
     ) -> String {
         var transcription: [String: JSONValue] = ["model": .string(transcriptionModel)]
@@ -48,6 +49,7 @@ enum RealtimeWire {
             session["tools"] = .array(tools.map(functionSchema))
             session["tool_choice"] = .string("auto")
         }
+        if let reasoning { session["reasoning"] = .object(["effort": .string(reasoning.rawValue)]) }
         let merged = overrides.isEmpty
             ? JSONValue.object(session)
             : JSONValue.object(session).deepMerging(.object(overrides))
@@ -96,19 +98,26 @@ enum RealtimeWire {
         ])
     }
 
-    /// `response.create`. With no `output`, runs under the session config; pass `output: .text` to override this one response to text-only. Audio responses go through `presenterResponse`/`directResponse`.
-    static func createResponse(output: RealtimeModality.Output? = nil) -> String {
+    /// `response.create`. With no arguments, runs under the session config. Each parameter overrides
+    /// the session for this ONE response: `output: .text` forces a text-only reply, `reasoning` sets
+    /// the reasoning effort (reasoning models only), `instructions` REPLACES the session instructions
+    /// (it does not append). Audio responses go through `presenterResponse`/`directResponse`.
+    static func createResponse(output: RealtimeModality.Output? = nil,
+                               reasoning: RealtimeReasoningEffort? = nil,
+                               instructions: String? = nil) -> String {
+        var response: [String: JSONValue] = [:]
         switch output {
         case nil:
-            return frame(["type": .string("response.create")])
+            break
         case .text:
-            return frame([
-                "type": .string("response.create"),
-                "response": .object(["output_modalities": .array([.string("text")])]),
-            ])
+            response["output_modalities"] = .array([.string("text")])
         case .audio, .audioAndText:
             preconditionFailure("createResponse supports a text-only override; audio responses use presenterResponse/directResponse")
         }
+        if let reasoning { response["reasoning"] = .object(["effort": .string(reasoning.rawValue)]) }
+        if let instructions { response["instructions"] = .string(instructions) }
+        guard !response.isEmpty else { return frame(["type": .string("response.create")]) }
+        return frame(["type": .string("response.create"), "response": .object(response)])
     }
 
     /// The grounded presenter: out-of-band (`conversation:"none"`), fed only the curated message.

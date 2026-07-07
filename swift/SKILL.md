@@ -87,7 +87,11 @@ stream. `.final` is what the orchestrator persists. Inputs/messages are value ty
   Session tuning on both: `transcriptionModel` (the user's STT only), `turnDetection`
   (`.semanticVAD(eagerness:)` / `.serverVAD(threshold:…)` / `.disabled`), and `sessionOverrides`
   (deep-merged into the generated `session.update` last — the escape hatch for unmodeled keys like
-  `audio.input.noise_reduction`).
+  `audio.input.noise_reduction`). On `OpenAIVoiceAssistant` additionally
+  `reasoning: RealtimeReasoningEffort` (`.minimal`…`.xhigh`, session-wide, reasoning models like
+  gpt-realtime-2 only) and `toolReasoningEffort: [String: RealtimeReasoningEffort]` — turn-sticky
+  escalation: once a turn calls a listed tool, that turn's subsequent responses are created with
+  the mapped effort (highest wins), so payload synthesis thinks harder while lookups stay fast.
 
 ## Custom implementations
 
