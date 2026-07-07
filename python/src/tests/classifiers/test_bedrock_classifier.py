@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import Mock, patch, AsyncMock, MagicMock
+from unittest.mock import Mock, patch, AsyncMock
 from botocore.exceptions import BotoCoreError, ClientError
 from agent_squad.classifiers.bedrock_classifier import BedrockClassifier, BedrockClassifierOptions
 from agent_squad.classifiers import ClassifierResult, ClassifierCallbacks
@@ -177,8 +177,8 @@ class TestBedrockClassifier:
 
         assert schema['required'] == ['userinput', 'selected_agent', 'confidence']
 
-    @patch('agent_squad.classifiers.bedrock_classifier.user_agent')
     @pytest.mark.asyncio
+    @patch('agent_squad.classifiers.bedrock_classifier.user_agent')
     async def test_process_request_success(self, mock_user_agent):
         """Test successful request processing with agent selection"""
         mock_response = {
@@ -216,8 +216,8 @@ class TestBedrockClassifier:
         assert result.confidence == 0.85
         self.mock_client.converse.assert_called_once()
 
-    @patch('agent_squad.classifiers.bedrock_classifier.user_agent')
     @pytest.mark.asyncio
+    @patch('agent_squad.classifiers.bedrock_classifier.user_agent')
     async def test_process_request_no_output(self, mock_user_agent):
         """Test handling when no output is received from Bedrock"""
         mock_response = {}
@@ -230,8 +230,8 @@ class TestBedrockClassifier:
         with pytest.raises(ValueError, match="No output received from Bedrock model"):
             await classifier.process_request("Test input", [])
 
-    @patch('agent_squad.classifiers.bedrock_classifier.user_agent')
     @pytest.mark.asyncio
+    @patch('agent_squad.classifiers.bedrock_classifier.user_agent')
     async def test_process_request_no_tool_use_in_content(self, mock_user_agent):
         """Test handling when response content has no toolUse block"""
         mock_response = {
@@ -253,9 +253,9 @@ class TestBedrockClassifier:
         with pytest.raises(ValueError, match="No valid tool use found in the response"):
             await classifier.process_request("Test input", [])
 
+    @pytest.mark.asyncio
     @patch('agent_squad.classifiers.bedrock_classifier.user_agent')
     @patch('agent_squad.classifiers.bedrock_classifier.is_tool_input')
-    @pytest.mark.asyncio
     async def test_process_request_invalid_tool_input(self, mock_is_tool_input, mock_user_agent):
         """Test handling when tool input does not match expected structure"""
         mock_response = {
@@ -284,8 +284,8 @@ class TestBedrockClassifier:
 
         mock_is_tool_input.assert_called_once_with({'invalid': 'data'})
 
-    @patch('agent_squad.classifiers.bedrock_classifier.user_agent')
     @pytest.mark.asyncio
+    @patch('agent_squad.classifiers.bedrock_classifier.user_agent')
     async def test_process_request_empty_tool_use(self, mock_user_agent):
         """Test handling when toolUse is empty/None"""
         mock_response = {
@@ -309,8 +309,8 @@ class TestBedrockClassifier:
         with pytest.raises(ValueError, match="No tool use found in the response"):
             await classifier.process_request("Test input", [])
 
-    @patch('agent_squad.classifiers.bedrock_classifier.user_agent')
     @pytest.mark.asyncio
+    @patch('agent_squad.classifiers.bedrock_classifier.user_agent')
     async def test_process_request_botocore_error(self, mock_user_agent):
         """Test handling of BotoCoreError"""
         self.mock_client.converse.side_effect = BotoCoreError()
@@ -321,8 +321,8 @@ class TestBedrockClassifier:
         with pytest.raises(BotoCoreError):
             await classifier.process_request("Test input", [])
 
-    @patch('agent_squad.classifiers.bedrock_classifier.user_agent')
     @pytest.mark.asyncio
+    @patch('agent_squad.classifiers.bedrock_classifier.user_agent')
     async def test_process_request_client_error(self, mock_user_agent):
         """Test handling of ClientError"""
         error_response = {
@@ -339,8 +339,8 @@ class TestBedrockClassifier:
         with pytest.raises(ClientError):
             await classifier.process_request("Test input", [])
 
-    @patch('agent_squad.classifiers.bedrock_classifier.user_agent')
     @pytest.mark.asyncio
+    @patch('agent_squad.classifiers.bedrock_classifier.user_agent')
     async def test_process_request_with_callbacks(self, mock_user_agent):
         """Test process_request triggers on_classifier_start and on_classifier_stop callbacks"""
         mock_callbacks = AsyncMock(spec=ClassifierCallbacks)
@@ -387,8 +387,8 @@ class TestBedrockClassifier:
         assert isinstance(stop_call[0][1], ClassifierResult)
         assert 'usage' in stop_call[1]
 
-    @patch('agent_squad.classifiers.bedrock_classifier.user_agent')
     @pytest.mark.asyncio
+    @patch('agent_squad.classifiers.bedrock_classifier.user_agent')
     async def test_process_request_agent_not_found(self, mock_user_agent):
         """Test process_request when selected agent does not exist"""
         mock_response = {
@@ -421,8 +421,8 @@ class TestBedrockClassifier:
         assert result.selected_agent is None
         assert result.confidence == 0.9
 
-    @patch('agent_squad.classifiers.bedrock_classifier.user_agent')
     @pytest.mark.asyncio
+    @patch('agent_squad.classifiers.bedrock_classifier.user_agent')
     async def test_process_request_confidence_as_float(self, mock_user_agent):
         """Test that confidence is properly converted to float"""
         mock_response = {
@@ -455,8 +455,8 @@ class TestBedrockClassifier:
         assert isinstance(result.confidence, float)
         assert result.confidence == 0.95
 
-    @patch('agent_squad.classifiers.bedrock_classifier.user_agent')
     @pytest.mark.asyncio
+    @patch('agent_squad.classifiers.bedrock_classifier.user_agent')
     async def test_process_request_tool_choice_for_anthropic_model(self, mock_user_agent):
         """Test that toolChoice is set for anthropic models"""
         mock_response = {
@@ -491,8 +491,49 @@ class TestBedrockClassifier:
             'tool': {'name': 'analyzePrompt'}
         }
 
-    @patch('agent_squad.classifiers.bedrock_classifier.user_agent')
     @pytest.mark.asyncio
+    @patch('agent_squad.classifiers.bedrock_classifier.user_agent')
+    async def test_process_request_tool_choice_for_mistral_large_model(self, mock_user_agent):
+        """Test that toolChoice is set for mistral-large models"""
+        options = BedrockClassifierOptions(
+            client=self.mock_client,
+            model_id="mistral.mistral-large-2402-v1:0"
+        )
+
+        mock_response = {
+            'output': {
+                'message': {
+                    'content': [
+                        {
+                            'toolUse': {
+                                'input': {
+                                    'userinput': 'test input',
+                                    'selected_agent': 'agent-1',
+                                    'confidence': 0.85
+                                }
+                            }
+                        }
+                    ]
+                }
+            },
+            'usage': {'inputTokens': 100, 'outputTokens': 50}
+        }
+
+        self.mock_client.converse.return_value = mock_response
+
+        classifier = BedrockClassifier(options)
+        classifier.set_agents(self.mock_agents)
+
+        await classifier.process_request("Test input", [])
+
+        call_kwargs = self.mock_client.converse.call_args[1]
+        assert 'toolChoice' in call_kwargs['toolConfig']
+        assert call_kwargs['toolConfig']['toolChoice'] == {
+            'tool': {'name': 'analyzePrompt'}
+        }
+
+    @pytest.mark.asyncio
+    @patch('agent_squad.classifiers.bedrock_classifier.user_agent')
     async def test_process_request_no_tool_choice_for_non_anthropic_model(self, mock_user_agent):
         """Test that toolChoice is not set for non-anthropic/non-mistral models"""
         options = BedrockClassifierOptions(
@@ -529,8 +570,8 @@ class TestBedrockClassifier:
         call_kwargs = self.mock_client.converse.call_args[1]
         assert 'toolChoice' not in call_kwargs['toolConfig']
 
-    @patch('agent_squad.classifiers.bedrock_classifier.user_agent')
     @pytest.mark.asyncio
+    @patch('agent_squad.classifiers.bedrock_classifier.user_agent')
     async def test_process_request_with_custom_inference_config(self, mock_user_agent):
         """Test process_request uses custom inference configuration in API call"""
         inference_config = {
