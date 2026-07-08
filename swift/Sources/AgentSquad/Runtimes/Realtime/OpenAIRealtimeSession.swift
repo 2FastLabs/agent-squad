@@ -23,6 +23,13 @@ protocol OpenAIRealtimeSession: Actor {
     nonisolated var store: (any ChatStorage)? { get }
     nonisolated var maxMessages: Int? { get }
     nonisolated var traceTranscripts: Bool { get }
+    /// When true, each turn is its own root trace instead of a child of one `voice.session` root.
+    /// Lets backends that finalize a trace on its root's end (e.g. LangSmith) render turns live
+    /// mid-session; turns still group into a conversation via any shared metadata (e.g. a thread id).
+    nonisolated var tracePerTurn: Bool { get }
+    /// Overrides the root trace's name (e.g. a human label like the match teams). `nil` keeps the
+    /// defaults: `voice.session` for the session root, `voice.turn` for a per-turn root.
+    nonisolated var traceName: String? { get }
     nonisolated var model: String { get }
     nonisolated var voice: String { get }
     nonisolated var language: String? { get }
@@ -103,14 +110,18 @@ extension OpenAIRealtimeSession {
         traceTranscripts && !text.isEmpty ? .string(text) : nil
     }
 
-    /// Open a `voice.turn` child of the session root, lazily opening the root on first use.
-    /// The root carries the conversation's `modality` marker and lives until `stop()`.
+    /// Open the turn's span. By default a `voice.turn` child of a lazily-opened `voice.session` root
+    /// (the whole conversation is one trace, the root carrying the `modality` marker and living until
+    /// `stop()`). With `tracePerTurn`, each turn is instead its own root — no session root is opened —
+    /// so it exports the moment the turn ends (grouping into a conversation is then left to shared
+    /// metadata, e.g. a thread id, rather than a shared trace). `traceName` overrides the root name.
     func openTurnSpan() -> (any SpanHandle)? {
+        let marker: JSONValue = .object(["modality": .string(modality.traceMarker)])
+        if tracePerTurn {
+            return tracer.startTrace(name: traceName ?? "voice.turn", userId: userId, sessionId: sessionId, metadata: marker)
+        }
         if sessionSpan == nil {
-            sessionSpan = tracer.startTrace(
-                name: "voice.session", userId: userId, sessionId: sessionId,
-                metadata: .object(["modality": .string(modality.traceMarker)])
-            )
+            sessionSpan = tracer.startTrace(name: traceName ?? "voice.session", userId: userId, sessionId: sessionId, metadata: marker)
         }
         return sessionSpan?.span("voice.turn", input: nil)
     }

@@ -326,6 +326,41 @@ import Testing
         #expect(tracer.recorder.ended.filter { $0 == root.id }.count == 1)
     }
 
+    @Test func tracePerTurnRootsEachTurnAndUsesTraceName() async throws {
+        let transport = MockRealtimeTransport()
+        let tracer = StructureTracer()
+        // Per-turn mode with a caller-provided trace name (e.g. the match teams).
+        let session = OpenAIVoiceAssistant(name: "voice", transport: transport, tools: oddsTools(),
+                                           userId: "u1", sessionId: "s1", tracer: tracer,
+                                           tracePerTurn: true, traceName: "PSG - OM")
+        try await session.start()
+
+        for (rid, q, a) in [("r1", "first?", "one"), ("r2", "second?", "two")] {
+            transport.push(userSaid(q))
+            transport.push(responseCreated(rid))
+            transport.push(audioTranscriptDone(rid, a))
+            transport.push(responseDone(rid))
+            await eventually { tracer.recorder.opened.filter { $0.name == "PSG - OM" }.count
+                == (rid == "r1" ? 1 : 2) }
+        }
+
+        let nodes = tracer.recorder.opened
+        let roots = nodes.filter { $0.name == "PSG - OM" }
+        #expect(nodes.filter { $0.name == "voice.session" }.isEmpty)         // no shared session root
+        #expect(roots.count == 2)                                           // one root trace per turn
+        #expect(roots.allSatisfy { $0.parentId == nil })                    // each turn is a trace root
+        #expect(roots.allSatisfy { $0.metadata == .object(["modality": .string("audio")]) })  // marker moved to the turn root
+        #expect(Set(roots.map(\.traceId)).count == 2)                       // two distinct traces
+        // Each turn's children (the `response` generation) share their own turn's trace id.
+        for root in roots {
+            let children = nodes.filter { $0.parentId == root.id }
+            #expect(!children.isEmpty)
+            #expect(children.allSatisfy { $0.traceId == root.traceId })
+        }
+        #expect(roots.allSatisfy { tracer.recorder.ended.contains($0.id) })  // each turn root ends on turn completion (before stop)
+        await session.stop()
+    }
+
     @Test func framesAfterStopDoNotReopenTheSessionTrace() async throws {
         let transport = MockRealtimeTransport()
         let tracer = StructureTracer()

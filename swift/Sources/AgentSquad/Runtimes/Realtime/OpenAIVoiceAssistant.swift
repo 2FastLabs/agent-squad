@@ -23,6 +23,8 @@ public actor OpenAIVoiceAssistant: OpenAIRealtimeSession, VoiceAssistant {
     nonisolated let store: (any ChatStorage)?
     nonisolated let maxMessages: Int?
     nonisolated let traceTranscripts: Bool
+    nonisolated let tracePerTurn: Bool
+    nonisolated let traceName: String?
     private let instructions: String
     nonisolated let model: String
     nonisolated let voice: String
@@ -71,6 +73,8 @@ public actor OpenAIVoiceAssistant: OpenAIRealtimeSession, VoiceAssistant {
         store: (any ChatStorage)? = nil,
         tracer: any Tracer = OSLogTracer(),
         traceTranscripts: Bool = true,
+        tracePerTurn: Bool = false,
+        traceName: String? = nil,
         maxMessages: Int? = ChatStorageDefaults.maxMessages,
         modality: RealtimeModality = RealtimeModality(),
         instructions: String = OpenAIVoiceAssistant.defaultInstructions,
@@ -93,6 +97,8 @@ public actor OpenAIVoiceAssistant: OpenAIRealtimeSession, VoiceAssistant {
         self.maxMessages = maxMessages
         self.tracer = tracer
         self.traceTranscripts = traceTranscripts
+        self.tracePerTurn = tracePerTurn
+        self.traceName = traceName
         self.modality = modality
         self.instructions = instructions
         self.model = model

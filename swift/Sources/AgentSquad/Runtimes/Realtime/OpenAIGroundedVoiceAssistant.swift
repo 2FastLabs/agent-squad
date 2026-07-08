@@ -22,6 +22,8 @@ public actor OpenAIGroundedVoiceAssistant: OpenAIRealtimeSession, VoiceAssistant
     nonisolated let store: (any ChatStorage)?
     nonisolated let maxMessages: Int?
     nonisolated let traceTranscripts: Bool
+    nonisolated let tracePerTurn: Bool
+    nonisolated let traceName: String?
     private let curator: any ToolOutputCurator
     private let presenterPrompt: PresenterPrompt
     private let presenterInput: PresenterInput
@@ -71,6 +73,8 @@ public actor OpenAIGroundedVoiceAssistant: OpenAIRealtimeSession, VoiceAssistant
         store: (any ChatStorage)? = nil,
         tracer: any Tracer = OSLogTracer(),
         traceTranscripts: Bool = true,
+        tracePerTurn: Bool = false,
+        traceName: String? = nil,
         maxMessages: Int? = ChatStorageDefaults.maxMessages,
         modality: RealtimeModality = RealtimeModality(),
         curator: any ToolOutputCurator = .dataBlock,
@@ -95,6 +99,8 @@ public actor OpenAIGroundedVoiceAssistant: OpenAIRealtimeSession, VoiceAssistant
         self.maxMessages = maxMessages
         self.tracer = tracer
         self.traceTranscripts = traceTranscripts
+        self.tracePerTurn = tracePerTurn
+        self.traceName = traceName
         self.modality = modality
         self.curator = curator
         self.presenterPrompt = presenterPrompt
