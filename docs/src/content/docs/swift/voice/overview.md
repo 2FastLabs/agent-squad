@@ -175,7 +175,9 @@ When `store` is provided at init, `start()` replays prior turns from `ChatStorag
 
 ## Tracing
 
-Each session is one trace: a `voice.session` root span opened on the first turn, with a `voice.turn` child per turn. Tool calls appear as `tool.<name>` children of the turn. Token usage (including per-modality audio token breakdown) is attached to the generation span inside each turn. Set `traceTranscripts: false` to keep spoken content off the trace while span structure and token counts still flow. See [Tracing overview](/agent-squad/swift/tracing/overview/).
+By default each session is one trace: a `voice.session` root span opened on the first turn, with a `voice.turn` child per turn. Tool calls appear as `tool.<name>` children of the turn. Token usage (including per-modality audio token breakdown) is attached to the generation span inside each turn. Set `traceTranscripts: false` to keep spoken content off the trace while span structure and token counts still flow.
+
+Set `tracePerTurn: true` to instead root **each turn** as its own trace (no shared `voice.session`): a backend that finalizes a trace when its root span ends (e.g. LangSmith) then renders each turn the moment it completes, rather than only after the session closes. The turns still group into one conversation via shared span metadata (e.g. a `thread_id` a custom `Redactor` stamps on every span), not a shared trace id. Use `traceName` to label the root trace with something human (e.g. the match teams) instead of `voice.session` / `voice.turn`. See [Tracing overview](/agent-squad/swift/tracing/overview/).
 
 ---
 

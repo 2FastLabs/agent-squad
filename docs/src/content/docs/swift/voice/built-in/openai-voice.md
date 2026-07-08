@@ -20,6 +20,8 @@ public actor OpenAIVoiceAssistant: VoiceAssistant {
         store: (any ChatStorage)? = nil,
         tracer: any Tracer = OSLogTracer(),
         traceTranscripts: Bool = true,
+        tracePerTurn: Bool = false,
+        traceName: String? = nil,
         maxMessages: Int? = ChatStorageDefaults.maxMessages,
         modality: RealtimeModality = RealtimeModality(),
         instructions: String = OpenAIVoiceAssistant.defaultInstructions,
@@ -46,6 +48,8 @@ public actor OpenAIVoiceAssistant: VoiceAssistant {
 | `store` | `nil` | Enables history seeding and persistence; see [Storage overview](/agent-squad/swift/storage/overview/) |
 | `tracer` | `OSLogTracer()` | Span sink; see [Tracing overview](/agent-squad/swift/tracing/overview/) |
 | `traceTranscripts` | `true` | When `false`, span input/output fields are omitted while structure and token counts still flow |
+| `tracePerTurn` | `false` | When `true`, each turn is its own root trace instead of nesting under one `voice.session` root — so a backend that finalizes a trace on its root's end (e.g. LangSmith) renders each turn as it completes, mid-session. Turns still group into a conversation via shared span metadata (e.g. a `thread_id`), not a shared trace id |
+| `traceName` | `nil` | Overrides the root trace name with a human label (e.g. the match teams). `nil` keeps the defaults: `voice.session` (session root) / `voice.turn` (per-turn root) |
 | `maxMessages` | `ChatStorageDefaults.maxMessages` | Cap on replayed history items |
 | `modality` | `RealtimeModality()` (speech in / audio out) | Controls the event mix; see [Voice overview](/agent-squad/swift/voice/overview/) |
 | `instructions` | `defaultInstructions` | System prompt — tells the model to use tools and reply concisely in speech |
