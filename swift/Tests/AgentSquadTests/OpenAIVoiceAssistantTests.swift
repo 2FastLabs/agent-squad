@@ -552,7 +552,8 @@ import Testing
     @Test func serverErrorForwardsCodeAndMessage() async throws {
         let transport = MockRealtimeTransport()
         let log = EventLog()
-        let session = session(transport)
+        let tracer = RecordingTracer()
+        let session = session(transport, tracer: tracer)
         log.start(session)
         try await session.start()
 
@@ -561,6 +562,29 @@ import Testing
         // The human-readable message survives to the app; the machine code rides alongside.
         #expect(log.errors == ["Rate limit reached for the model."])
         #expect(log.errorCodes == ["rate_limit_exceeded"])
+        // No turn was in flight (no `response.created`), so there is no span to attribute — none opened.
+        #expect(!tracer.recorder.opened.contains("voice.turn"))
+    }
+
+    @Test func serverErrorInFlightClosesTheTurnSpanWithError() async throws {
+        let transport = MockRealtimeTransport()
+        let log = EventLog()
+        let tracer = RecordingTracer()
+        let session = session(transport, tracer: tracer)
+        log.start(session)
+        try await session.start()
+
+        transport.push(responseCreated("r1"))   // a turn is now in flight — the span is open
+        transport.push(serverError("rate_limit_exceeded", message: "Rate limit reached for the model."))
+
+        await eventually { !log.errors.isEmpty }
+        #expect(log.errorCodes == ["rate_limit_exceeded"])
+        #expect(log.states.last == .listening)   // recovered to the resting state
+        // The in-flight turn span is closed WITH the error, not leaked open until stop().
+        await eventually { tracer.recorder.ended.contains("voice.turn") }
+        let spanError = try #require(tracer.recorder.error("voice.turn"))
+        #expect(spanError.contains("rate_limit_exceeded"))
+        #expect(spanError.contains("Rate limit reached for the model."))
     }
 
     @Test func failedResponseEmitsErrorAndDoesNotContinueTheTurn() async throws {

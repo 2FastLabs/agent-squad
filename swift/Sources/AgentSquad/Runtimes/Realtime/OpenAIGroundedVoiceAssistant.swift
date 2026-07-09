@@ -229,7 +229,24 @@ public actor OpenAIGroundedVoiceAssistant: OpenAIRealtimeSession, VoiceAssistant
             await responseDone(id, usage: usage, status: status)
         case .error(let code, let message):
             if code == "response_cancel_not_active" { return }   // benign barge-in race
-            emit(.error(code: code, message: message ?? code ?? "realtime error"))
+            let detail = message ?? code ?? "realtime error"
+            // A server error ends the turn in flight (no `response.done` follows one). Close its span
+            // WITH the error so the failure is traced now — flagged errored — instead of leaking the
+            // span open until stop(). No active turn (a session-level error, or one before the first
+            // `response.created`): nothing to attribute, so surface it only — see failTurn for the
+            // failed-`response.done` path.
+            if turnSpan != nil {
+                presenterId = nil
+                presenterActive = false
+                presenterResponses.removeAll()
+                truncation.reset()
+                endTurn(error: RealtimeTurnError(code: code, message: detail))
+                resetTurn()
+                pendingUserText = ""
+                replyText = ""
+                emit(.state(.listening))   // recovered to the resting state, as failTurn does
+            }
+            emit(.error(code: code, message: detail))
         }
     }
 

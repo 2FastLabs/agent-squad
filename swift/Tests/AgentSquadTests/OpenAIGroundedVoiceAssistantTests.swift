@@ -574,4 +574,26 @@ import Testing
         try? await Task.sleep(for: .milliseconds(20))
         #expect(store.saved.isEmpty)   // no reply was spoken — nothing to persist
     }
+
+    @Test func serverErrorInFlightClosesTheTurnSpanWithError() async throws {
+        let transport = MockRealtimeTransport()
+        let log = EventLog()
+        let tracer = RecordingTracer()
+        let session = session(transport, tools: oddsTools(), tracer: tracer)
+        log.start(session)
+        try await session.start()
+
+        transport.push(userSaid("odds?"))
+        transport.push(responseCreated("r1"))   // the gatherer turn is in flight — the span is open
+        transport.push(serverError("rate_limit_exceeded", message: "Rate limit reached for the model."))
+
+        await eventually { !log.errors.isEmpty }
+        #expect(log.errorCodes == ["rate_limit_exceeded"])
+        #expect(log.states.last == .listening)
+        // The in-flight turn span is closed WITH the error, not leaked open until stop().
+        await eventually { tracer.recorder.ended.contains("voice.turn") }
+        let spanError = try #require(tracer.recorder.error("voice.turn"))
+        #expect(spanError.contains("rate_limit_exceeded"))
+        #expect(spanError.contains("Rate limit reached for the model."))
+    }
 }
