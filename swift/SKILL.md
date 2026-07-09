@@ -125,7 +125,11 @@ signatures live in `Sources/AgentSquad/`.
 - **Storage**: `FileChatStorage` (JSON, iOS 16+, scopes per-call by `userId`/`sessionId`/`agentId` — e.g. `sessionId` to isolate per match) or `DeviceChatStorage` (SwiftData, iOS 17+, bound to one `userId`). Both default to Library/Caches (disposable). `InMemoryChatStorage` (iOS 16+) is non-persistent and holds one conversation — construct it empty or seeded with a prior conversation to load one into a session. Wrap any store in `TransformingChatStorage` to scrub/redact before persistence; prefer redacting over returning `nil` (dropping one side of an exchange can make the store skip its counterpart via the consecutive-same-role guard).
 - **Tracing lifecycle**: nothing drains the tracer for you — flush on background, shut down on
   termination. `OSLogTracer` logs no payloads. `Redaction` hashes ids + clips strings but does **not**
-  pattern-scrub PII — supply a custom `Redactor` for that.
+  pattern-scrub PII — supply a custom `Redactor` for that. A realtime answer generation
+  (`response`/`presenter`) is backdated to its `response.created` receive-time via
+  `SpanHandle.generation(…, startedAt:)`, so the exported span carries the real call latency instead
+  of a ~0 duration (the Realtime API sends no server-side timing). The overload defaults to stamping
+  now, so custom `SpanHandle`s need not implement it.
 - **Realtime** is a peer runtime, not an agent; its `events` stream is non-throwing; needs
   `NSMicrophoneUsageDescription`; always `stop()`. In-band failures arrive as
   `.error(code:message:)` — `code` is the API's machine code (e.g. `rate_limit_exceeded`),

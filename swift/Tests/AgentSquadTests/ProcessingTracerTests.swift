@@ -107,6 +107,25 @@ import Testing
         #expect(genEvent.completionTokens == 5)
     }
 
+    @Test func generationBackdatesStartedAtToTheGivenTime() async throws {
+        let exporter = RecordingExporter()
+        let tracer = ProcessingTracer(exporter: exporter, batchSize: 100)
+
+        // A realtime answer whose call started well before we could materialize the span: backdating
+        // `startedAt` makes the exported span carry the real latency instead of a ~0 duration.
+        let start = Date(timeIntervalSince1970: 1_000)
+        let root = tracer.startTrace(name: "turn", userId: nil, sessionId: nil, metadata: nil)
+        let gen = root.generation("response", model: "gpt", input: nil, startedAt: start)
+        gen.end(output: nil, error: nil)
+        root.end(output: nil, error: nil)
+        try await tracer.flush()
+
+        let genEvent = try #require(await exporter.events.first { $0.kind == .generation })
+        #expect(genEvent.startedAt == start)                        // the backdate survives finalize
+        let ended = try #require(genEvent.endedAt)
+        #expect(ended.timeIntervalSince(start) > 0)                 // and yields a non-zero latency
+    }
+
     @Test func setInputAfterOpenIsAppliedToTheExportedSpan() async throws {
         let exporter = RecordingExporter()
         let tracer = ProcessingTracer(exporter: exporter, batchSize: 100)

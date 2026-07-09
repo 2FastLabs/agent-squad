@@ -250,6 +250,26 @@ import Testing
         #expect(tracer.recorder.output("voice.turn") == .string("PSG is favourite at 2.5"))
     }
 
+    @Test func responseGenerationSpanMeasuresRealLatencyFromResponseCreated() async throws {
+        let transport = MockRealtimeTransport()
+        let tracer = RecordingTracer()
+        let log = EventLog()
+        let session = session(transport, tracer: tracer)
+        log.start(session)
+        try await session.start()
+
+        transport.push(responseCreated("r1"))                 // the answer starts here (span start anchor)
+        await eventually { log.states.contains(.speaking) }   // …created processed, startedAt stamped…
+        try await Task.sleep(for: .milliseconds(50))          // …the model "generates" for a bit…
+        transport.push(responseDone("r1"))                    // …and finishes here (span end anchor)
+
+        await eventually { tracer.recorder.ended.contains("response") }
+        // The `response` generation is backdated to response.created, so its duration reflects the real
+        // LLM latency (previously it was created-and-ended at response.done → ~0s, the LangSmith bug).
+        let latency = try #require(tracer.recorder.duration("response"))
+        #expect(latency >= 0.02)
+    }
+
     @Test func traceTranscriptsOffOmitsSpokenTextButKeepsStructureAndUsage() async throws {
         let transport = MockRealtimeTransport()
         let tracer = RecordingTracer()

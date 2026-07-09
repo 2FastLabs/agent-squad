@@ -53,6 +53,10 @@ struct ProcessedSpan: GenerationHandle {
         child(kind: .generation, name: name, input: input, model: model)
     }
 
+    func generation(_ name: String, model: String, input: JSONValue?, startedAt: Date) -> any GenerationHandle {
+        child(kind: .generation, name: name, input: input, model: model, startedAt: startedAt)
+    }
+
     func usage(promptTokens: Int?, completionTokens: Int?) {
         processor.onUsage(id: id, promptTokens: promptTokens, completionTokens: completionTokens)
     }
@@ -70,8 +74,8 @@ struct ProcessedSpan: GenerationHandle {
         processor.onEnd(id: id, endedAt: Date(), output: output, error: error.map { String(reflecting: $0) })
     }
 
-    private func child(kind: TraceEvent.Kind, name: String, input: JSONValue?, model: String?) -> ProcessedSpan {
-        let child = ProcessedSpan(traceId: traceId, id: UUID().uuidString, parentId: id, startedAt: Date(), userId: userId, sessionId: sessionId, processor: processor)
+    private func child(kind: TraceEvent.Kind, name: String, input: JSONValue?, model: String?, startedAt: Date = Date()) -> ProcessedSpan {
+        let child = ProcessedSpan(traceId: traceId, id: UUID().uuidString, parentId: id, startedAt: startedAt, userId: userId, sessionId: sessionId, processor: processor)
         processor.onOpen(SpanData(
             id: child.id, traceId: traceId, parentId: child.parentId, kind: kind, name: name,
             startedAt: child.startedAt, input: input, model: model, userId: userId, sessionId: sessionId

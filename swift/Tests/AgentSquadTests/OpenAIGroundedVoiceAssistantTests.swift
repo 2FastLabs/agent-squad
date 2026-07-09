@@ -357,6 +357,50 @@ import Testing
         #expect(tracer.recorder.output("voice.turn") == .string("PSG is favourite at 2.5"))
     }
 
+    @Test func presenterGenerationSpanMeasuresRealLatencyFromResponseCreated() async throws {
+        let transport = MockRealtimeTransport()
+        let tracer = RecordingTracer()
+        let log = EventLog()
+        let session = session(transport, tools: oddsTools(), tracer: tracer)
+        log.start(session)
+        try await session.start()
+
+        transport.push(responseCreated("r1"))
+        transport.push(funcArgs("r1", "c1", "odds"))
+        transport.push(responseDone("r1"))                          // tools → continue
+        transport.push(responseDone("r2"))                          // settled → present()
+        await eventually { log.states.contains(.presenting) }       // gatherer drained, pump idle
+        transport.push(responseCreated("p1", role: "presenter"))    // presenter starts (span start anchor)
+        try await Task.sleep(for: .milliseconds(50))                // …presenter "generates"…
+        transport.push(responseDone("p1"))                          // presenter finishes (span end anchor)
+
+        await eventually { tracer.recorder.ended.contains("presenter") }
+        // Backdated to the presenter response.created, so the generation carries the real latency
+        // instead of the ~0s it showed when created-and-ended at response.done.
+        let latency = try #require(tracer.recorder.duration("presenter"))
+        #expect(latency >= 0.02)
+    }
+
+    @Test func directGenerationSpanMeasuresRealLatencyFromResponseCreated() async throws {
+        let transport = MockRealtimeTransport()
+        let tracer = RecordingTracer()
+        let log = EventLog()
+        let session = session(transport, tools: oddsTools(), tracer: tracer)
+        log.start(session)
+        try await session.start()
+
+        transport.push(#"{"type":"response.output_text.delta","response_id":"agent","delta":"hi"}"#)
+        transport.push(responseDone("agent"))                       // no tools, has text → speakDirectly()
+        await eventually { log.states.contains(.speaking) }         // speakDirectly ran, pump idle
+        transport.push(responseCreated("d1", role: "direct"))       // direct reply starts (span start anchor)
+        try await Task.sleep(for: .milliseconds(50))                // …direct reply "generates"…
+        transport.push(responseDone("d1"))                          // direct reply finishes (span end anchor)
+
+        await eventually { tracer.recorder.ended.contains("presenter") }   // the direct answer is the `presenter` generation
+        let latency = try #require(tracer.recorder.duration("presenter"))
+        #expect(latency >= 0.02)
+    }
+
     @Test func attachesAudioTokenBreakdownToThePresenterGeneration() async throws {
         let transport = MockRealtimeTransport()
         let tracer = RecordingTracer()

@@ -54,6 +54,10 @@ public actor OpenAIVoiceAssistant: OpenAIRealtimeSession, VoiceAssistant {
     private var liveResponses: Set<String> = []
     private var currentResponseId: String?
     private var isSpeaking = false
+    // When each response was created on the wire (client receive-time of `response.created`), so the
+    // answer generation span can be backdated to it — the OpenAI Realtime API sends no timing, and
+    // materializing the span at `response.done` alone would give it ~0 latency.
+    private var responseStartedAt: [String: Date] = [:]
     // Barge-in truncation: which audio item is playing + how much was sent, vs. the runtime's
     // played-ms clock. NOT cleared by `resetTurn` — `interrupt()` reads it after resetting the turn.
     private var truncation = AudioTruncationState()
@@ -226,6 +230,7 @@ public actor OpenAIVoiceAssistant: OpenAIRealtimeSession, VoiceAssistant {
             liveResponses.insert(id)
             currentResponseId = id
             isSpeaking = true
+            responseStartedAt[id] = Date()   // anchor the answer generation's latency to now (created)
         case .responseDone(let id, let usage, let status):
             await responseDone(id, usage: usage, status: status)
         case .error(let code, let message):
@@ -272,7 +277,10 @@ public actor OpenAIVoiceAssistant: OpenAIRealtimeSession, VoiceAssistant {
         // Record the spoken exchange (transcript in/out + usage) as a generation under the turn, then
         // close the turn with the reply — so the trace shows what was said, not an empty span.
         if let turn = turnSpan {
-            let exchange = turn.generation("response", model: model, input: transcript(user))
+            // Backdate the generation to the response's `created` receive-time so it carries the real
+            // LLM latency (the API sends no timing; stamping it now would give a ~0-duration span).
+            let exchange = turn.generation("response", model: model, input: transcript(user),
+                                           startedAt: responseStartedAt[id] ?? Date())
             exchange.usage(promptTokens: usage?.inputTokens, completionTokens: usage?.outputTokens)
             if let breakdown = usage?.breakdownMetadata { exchange.setMetadata(breakdown) }
             exchange.end(output: transcript(reply), error: nil)
@@ -316,6 +324,7 @@ public actor OpenAIVoiceAssistant: OpenAIRealtimeSession, VoiceAssistant {
         userText = ""
         replyText = ""
         callsPerResponse.removeAll()
+        responseStartedAt.removeAll()
         fnNames.removeAll()
         currentTurnIsTextOnly = false   // next turn defaults to the session modality unless `sendText` opts in
         turnReasoningEffort = nil       // reasoning escalation is per turn

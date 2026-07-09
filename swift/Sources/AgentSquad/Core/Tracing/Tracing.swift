@@ -34,6 +34,11 @@ public protocol SpanHandle: Sendable {
     func span(_ name: String, input: JSONValue?) -> any SpanHandle
     /// Open a child generation — an LLM call (records model + token usage).
     func generation(_ name: String, model: String, input: JSONValue?) -> any GenerationHandle
+    /// Open a child generation whose start is backdated to `startedAt` — for a call whose real start
+    /// (e.g. a realtime `response.created`) precedes the moment we can materialize the span. Lets the
+    /// exported span carry the true call latency instead of a ~0 duration. Defaults to ignoring
+    /// `startedAt` (stamping now), so a stateless tracer need not implement it.
+    func generation(_ name: String, model: String, input: JSONValue?, startedAt: Date) -> any GenerationHandle
     /// Set the input once it's known later than open (e.g. a transcript arriving after the turn span).
     func setInput(_ input: JSONValue)
     /// Attach metadata — a `.object` whose top-level keys ride to the backend as span attributes
@@ -47,6 +52,11 @@ public protocol SpanHandle: Sendable {
 extension SpanHandle {
     public func setInput(_ input: JSONValue) {}
     public func setMetadata(_ metadata: JSONValue) {}
+    /// Default: ignore the backdate and stamp the start now — implementers that don't track a
+    /// separate start time keep working unchanged.
+    public func generation(_ name: String, model: String, input: JSONValue?, startedAt: Date) -> any GenerationHandle {
+        generation(name, model: model, input: input)
+    }
 }
 
 /// A span for an LLM call; adds token accounting.

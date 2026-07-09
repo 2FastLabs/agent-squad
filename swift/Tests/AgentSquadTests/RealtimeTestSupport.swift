@@ -75,12 +75,15 @@ final class RecordingTracer: Tracer, @unchecked Sendable {
         private var _usage: [String: (Int?, Int?)] = [:]
         private var _metadata: [String: JSONValue] = [:]
         private var _errors: [String: String] = [:]
-        func open(_ n: String, input: JSONValue? = nil) { lock.withLock { _opened.append(n); if let input { _input[n] = input } } }
+        private var _startedAt: [String: Date] = [:]
+        private var _endedAt: [String: Date] = [:]
+        func open(_ n: String, input: JSONValue? = nil, startedAt: Date = Date()) { lock.withLock { _opened.append(n); _startedAt[n] = startedAt; if let input { _input[n] = input } } }
         func setInput(_ n: String, _ input: JSONValue) { lock.withLock { _input[n] = input } }
         func setMetadata(_ n: String, _ metadata: JSONValue) { lock.withLock { _metadata[n] = metadata } }
         func close(_ n: String, output: JSONValue?, error: (any Error)? = nil) {
             lock.withLock {
                 _ended.append(n)
+                _endedAt[n] = Date()
                 if let output { _output[n] = output }
                 if let error { _errors[n] = String(reflecting: error) }   // same projection the processors use
             }
@@ -93,6 +96,9 @@ final class RecordingTracer: Tracer, @unchecked Sendable {
         func usage(_ n: String) -> (Int?, Int?)? { lock.withLock { _usage[n] } }
         func metadata(_ n: String) -> JSONValue? { lock.withLock { _metadata[n] } }
         func error(_ n: String) -> String? { lock.withLock { _errors[n] } }
+        /// The span's recorded latency (end − start). `startedAt` is the backdated value when the span
+        /// was opened via `generation(…startedAt:)`, so this asserts the real duration, not ~0.
+        func duration(_ n: String) -> TimeInterval? { lock.withLock { guard let s = _startedAt[n], let e = _endedAt[n] else { return nil }; return e.timeIntervalSince(s) } }
     }
     final class Span: GenerationHandle, @unchecked Sendable {
         let id: String
@@ -100,6 +106,7 @@ final class RecordingTracer: Tracer, @unchecked Sendable {
         init(id: String, recorder: Recorder) { self.id = id; self.recorder = recorder }
         func span(_ name: String, input: JSONValue?) -> any SpanHandle { recorder.open(name, input: input); return Span(id: name, recorder: recorder) }
         func generation(_ name: String, model: String, input: JSONValue?) -> any GenerationHandle { recorder.open(name, input: input); return Span(id: name, recorder: recorder) }
+        func generation(_ name: String, model: String, input: JSONValue?, startedAt: Date) -> any GenerationHandle { recorder.open(name, input: input, startedAt: startedAt); return Span(id: name, recorder: recorder) }
         func setInput(_ input: JSONValue) { recorder.setInput(id, input) }
         func setMetadata(_ metadata: JSONValue) { recorder.setMetadata(id, metadata) }
         func end(output: JSONValue?, error: (any Error)?) { recorder.close(id, output: output, error: error) }
