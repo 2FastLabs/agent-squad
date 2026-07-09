@@ -81,7 +81,11 @@ public enum RealtimeEvent: Sendable {
     /// PCM16 @ 24 kHz to play (only for the response currently playing — the session drops stale audio on `interrupt()`). Drain promptly into a bounded playback channel.
     case audio(Data)
     case audioDone(interrupted: Bool)               // flush playback (barge-in or natural end)
-    case error(String)
+    /// A recoverable in-band failure: a server `error` event (`code` = the API's machine code, e.g.
+    /// `rate_limit_exceeded`), a response that ended `failed` (`code` = `response_failed`), or —
+    /// PR 2 — a dead transport (`code` = `transport_closed`). `message` is the human-readable
+    /// detail, always non-empty; log it, don't show it verbatim.
+    case error(code: String?, message: String)
 }
 
 /// A long-lived, bidirectional voice session (e.g. OpenAI Realtime). A peer of `Orchestrator`, not

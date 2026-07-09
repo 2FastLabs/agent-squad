@@ -205,6 +205,22 @@ enum RealtimeWire {
         }
     }
 
+    /// The response's final status + a one-line detail. `failed` carries `status_details.error`
+    /// (`type`/`code` — the API puts no message there); `cancelled`/`incomplete` carry
+    /// `status_details.reason` (`turn_detected`, `client_cancelled`, `max_output_tokens`,
+    /// `content_filter`).
+    private static func responseStatus(_ response: Envelope.ResponseObject) -> RealtimeResponseStatus? {
+        guard let status = response.status else { return nil }
+        let detail = response.statusDetails.flatMap { details -> String? in
+            if let error = details.error {
+                let joined = [error.type, error.code].compactMap { $0 }.joined(separator: ": ")
+                return joined.isEmpty ? nil : joined
+            }
+            return details.reason
+        }
+        return RealtimeResponseStatus(status: status, detail: detail)
+    }
+
     private static func functionSchema(_ tool: AgentTool) -> JSONValue {
         .object([
             "type": .string("function"),
@@ -235,9 +251,9 @@ enum RealtimeWire {
                     outputAudioTokens: usage.outputTokenDetails?.audioTokens,
                     cachedInputTokens: usage.inputTokenDetails?.cachedTokens
                 )
-            })
+            }, status: event.response.flatMap(responseStatus))
         case "error":
-            return .error(code: event.error?.code)
+            return .error(code: event.error?.code, message: event.error?.message)
         case "response.function_call_arguments.done":
             return .functionCallArguments(responseId: event.responseId ?? "", callId: event.callId ?? "", name: event.name, arguments: event.arguments ?? "{}")
         case "response.output_item.added":
@@ -297,7 +313,23 @@ enum RealtimeWire {
             let id: String?
             let metadata: Metadata?
             let usage: Usage?
+            let status: String?
+            let statusDetails: StatusDetails?
+            enum CodingKeys: String, CodingKey {
+                case id, metadata, usage, status
+                case statusDetails = "status_details"
+            }
             struct Metadata: Decodable { let role: String? }
+            /// Why the response ended: `failed` populates `error` (type/code only — no message on
+            /// this object), `cancelled`/`incomplete` populate `reason`.
+            struct StatusDetails: Decodable {
+                let reason: String?
+                let error: StatusError?
+                struct StatusError: Decodable {
+                    let type: String?
+                    let code: String?
+                }
+            }
             // Scalar totals feed the tracer's `usage(...)`; the per-modality breakdown
             // (`input_token_details.audio_tokens`/`.cached_tokens`, `output_token_details.audio_tokens`)
             // rides span metadata — see `RealtimeUsage`.
@@ -332,7 +364,12 @@ enum RealtimeWire {
             let name: String?
             enum CodingKeys: String, CodingKey { case type, id, name; case callId = "call_id" }
         }
-        struct ErrorObject: Decodable { let code: String? }
+        /// The GA `error` event's payload: `message` is required on the wire and is the only
+        /// human-readable detail the server sends — dropping it leaves consumers a bare code.
+        struct ErrorObject: Decodable {
+            let code: String?
+            let message: String?
+        }
     }
 }
 
@@ -349,8 +386,17 @@ enum ServerEvent: Sendable, Equatable {
     case audioTranscriptDelta(responseId: String, text: String)
     case audioTranscriptDone(responseId: String, text: String)
     case responseCreated(id: String, role: String?)
-    case responseDone(id: String, usage: RealtimeUsage?)
-    case error(code: String?)
+    case responseDone(id: String, usage: RealtimeUsage?, status: RealtimeResponseStatus?)
+    case error(code: String?, message: String?)
+}
+
+/// A response's final status from `response.done`. `isFailure` is the turn-killing case the
+/// sessions act on; `cancelled` (barge-in) and `incomplete` (max tokens / content filter, the
+/// audio still played) end turns through their normal paths.
+struct RealtimeResponseStatus: Sendable, Equatable {
+    let status: String   // completed | cancelled | failed | incomplete | in_progress
+    let detail: String?  // failed → status_details.error (type: code); cancelled/incomplete → reason
+    var isFailure: Bool { status == "failed" }
 }
 
 /// Token accounting from a Realtime `response.done`: scalar totals plus the per-modality breakdown.

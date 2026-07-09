@@ -127,7 +127,10 @@ signatures live in `Sources/AgentSquad/`.
   termination. `OSLogTracer` logs no payloads. `Redaction` hashes ids + clips strings but does **not**
   pattern-scrub PII — supply a custom `Redactor` for that.
 - **Realtime** is a peer runtime, not an agent; its `events` stream is non-throwing; needs
-  `NSMicrophoneUsageDescription`; always `stop()`.
+  `NSMicrophoneUsageDescription`; always `stop()`. In-band failures arrive as
+  `.error(code:message:)` — `code` is the API's machine code (e.g. `rate_limit_exceeded`) or
+  `response_failed` when a response ends with `status: "failed"`; `message` is the human-readable
+  detail for logs, not for verbatim display.
 - **Barge-in truncation**: on interrupt the session sends `conversation.item.truncate` so the
   server drops the unheard audio + transcript from context (OpenAI docs' WebSocket procedure).
   Automatic when wired by `RealtimeRuntime` with the built-in outputs; a custom `AudioOutput`

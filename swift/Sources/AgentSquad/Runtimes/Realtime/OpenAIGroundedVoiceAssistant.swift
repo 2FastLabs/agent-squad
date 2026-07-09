@@ -225,15 +225,21 @@ public actor OpenAIGroundedVoiceAssistant: OpenAIRealtimeSession, VoiceAssistant
                 presenterId = id
                 spokenResponseIsInBand = role == "direct"
             }
-        case .responseDone(let id, let usage):
-            await responseDone(id, usage: usage)
-        case .error(let code):
+        case .responseDone(let id, let usage, let status):
+            await responseDone(id, usage: usage, status: status)
+        case .error(let code, let message):
             if code == "response_cancel_not_active" { return }   // benign barge-in race
-            emit(.error(code ?? "realtime error"))
+            emit(.error(code: code, message: message ?? code ?? "realtime error"))
         }
     }
 
-    private func responseDone(_ id: String, usage: RealtimeUsage?) async {
+    private func responseDone(_ id: String, usage: RealtimeUsage?, status: RealtimeResponseStatus?) async {
+        if let status, status.isFailure {
+            // The response died server-side (gatherer, presenter, or direct alike) — presenting or
+            // continuing from it would hang the turn. Close it and hand the app the failure in-band.
+            failTurn(responseId: id, detail: status.detail)
+            return
+        }
         if presenterResponses.contains(id) {
             presenterResponses.remove(id)
             if id == presenterId {   // the response we're hearing finished cleanly
@@ -309,6 +315,23 @@ public actor OpenAIGroundedVoiceAssistant: OpenAIRealtimeSession, VoiceAssistant
         let frame = RealtimeWire.directResponse(instructions: directInstructions, output: modality.output, voice: voice)
         resetTurn()   // before the await — see present()
         try? await transport.send(frame)
+    }
+
+    /// A response ended `failed`: close the turn (span included), surface the failure in-band, and
+    /// return the session to its resting state — the app decides whether to retry. Clears the
+    /// pending presenter pair too: there is no reply to persist.
+    private func failTurn(responseId id: String, detail: String?) {
+        presenterResponses.remove(id)
+        if id == presenterId { presenterId = nil }
+        presenterActive = false
+        callsPerResponse[id] = nil
+        truncation.reset()
+        endTurn(error: nil)
+        emit(.error(code: "response_failed", message: detail ?? "response failed"))
+        emit(.state(.listening))   // same resting state a clean finish announces
+        resetTurn()
+        pendingUserText = ""
+        replyText = ""
     }
 
     // MARK: - Turn lifecycle

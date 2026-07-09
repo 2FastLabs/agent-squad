@@ -44,7 +44,8 @@ final class EventLog: @unchecked Sendable {
     var presenterTexts: [String] { all.compactMap { if case .presenterText(let t, _) = $0 { return t } else { return nil } } }
     var widgets: [UIPayload] { all.compactMap { if case .widget(let p) = $0 { return p } else { return nil } } }
     var audioDones: [Bool] { all.compactMap { if case .audioDone(let i) = $0 { return i } else { return nil } } }
-    var errors: [String] { all.compactMap { if case .error(let m) = $0 { return m } else { return nil } } }
+    var errors: [String] { all.compactMap { if case .error(_, let m) = $0 { return m } else { return nil } } }
+    var errorCodes: [String?] { all.compactMap { if case .error(let c, _) = $0 { return .some(c) } else { return nil } } }
     var audioCount: Int { all.filter(\.isAudio).count }
 }
 
@@ -188,6 +189,16 @@ func responseDone(_ id: String, inputTokens: Int? = nil, outputTokens: Int? = ni
         return #"{"type":"response.done","response":{"id":"\#(id)","usage":{"input_tokens":\#(i),"output_tokens":\#(o)}}}"#
     }
     return #"{"type":"response.done","response":{"id":"\#(id)"}}"#
+}
+
+func responseFailed(_ id: String, errorType: String = "server_error", errorCode: String? = "internal_error") -> String {
+    let error = errorCode.map { #"{"type":"\#(errorType)","code":"\#($0)"}"# } ?? #"{"type":"\#(errorType)"}"#
+    return #"{"type":"response.done","response":{"id":"\#(id)","status":"failed","status_details":{"type":"failed","error":\#(error)}}}"#
+}
+
+func serverError(_ code: String?, message: String) -> String {
+    let codeJSON = code.map { #""\#($0)""# } ?? "null"
+    return #"{"type":"error","error":{"type":"invalid_request_error","code":\#(codeJSON),"message":"\#(message)"}}"#
 }
 
 func responseCreated(_ id: String, role: String? = nil) -> String {

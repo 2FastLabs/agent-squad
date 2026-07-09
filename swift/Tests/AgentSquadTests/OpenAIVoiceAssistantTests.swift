@@ -548,4 +548,37 @@ import Testing
         let reasoning = try #require(sess["reasoning"] as? [String: Any])
         #expect(reasoning["effort"] as? String == "high")
     }
+
+    @Test func serverErrorForwardsCodeAndMessage() async throws {
+        let transport = MockRealtimeTransport()
+        let log = EventLog()
+        let session = session(transport)
+        log.start(session)
+        try await session.start()
+
+        transport.push(serverError("rate_limit_exceeded", message: "Rate limit reached for the model."))
+        await eventually { !log.errors.isEmpty }
+        // The human-readable message survives to the app; the machine code rides alongside.
+        #expect(log.errors == ["Rate limit reached for the model."])
+        #expect(log.errorCodes == ["rate_limit_exceeded"])
+    }
+
+    @Test func failedResponseEmitsErrorAndDoesNotContinueTheTurn() async throws {
+        let transport = MockRealtimeTransport()
+        let log = EventLog()
+        let session = session(transport)
+        log.start(session)
+        try await session.start()
+
+        transport.push(responseCreated("r1"))
+        transport.push(funcArgs("r1", "c1", "odds"))   // tools called — a healthy done would continue
+        transport.push(responseFailed("r1"))           // …but the response died server-side
+
+        await eventually { !log.errors.isEmpty }
+        #expect(log.errorCodes == ["response_failed"])
+        #expect(log.errors == ["server_error: internal_error"])   // status_details.error, decoded
+        #expect(log.states.last == .listening)                     // back to the resting state
+        // No tool-continue response was created off the failed response.
+        #expect(!sentTypes(transport).contains("response.create"))
+    }
 }

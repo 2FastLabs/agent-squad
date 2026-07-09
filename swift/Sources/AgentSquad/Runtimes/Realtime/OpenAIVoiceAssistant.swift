@@ -226,17 +226,23 @@ public actor OpenAIVoiceAssistant: OpenAIRealtimeSession, VoiceAssistant {
             liveResponses.insert(id)
             currentResponseId = id
             isSpeaking = true
-        case .responseDone(let id, let usage):
-            await responseDone(id, usage: usage)
-        case .error(let code):
+        case .responseDone(let id, let usage, let status):
+            await responseDone(id, usage: usage, status: status)
+        case .error(let code, let message):
             if code == "response_cancel_not_active" { return }   // benign barge-in race
-            emit(.error(code ?? "realtime error"))
+            emit(.error(code: code, message: message ?? code ?? "realtime error"))
         }
     }
 
-    private func responseDone(_ id: String, usage: RealtimeUsage?) async {
+    private func responseDone(_ id: String, usage: RealtimeUsage?, status: RealtimeResponseStatus?) async {
         guard liveResponses.contains(id) else { return }   // unknown / stale (cancelled) response
         liveResponses.remove(id)
+        if let status, status.isFailure {
+            // The response died server-side (no `error` event accompanies this) — continuing the
+            // tool loop would hang the turn. Close it and hand the app the failure in-band.
+            failTurn(responseId: id, detail: status.detail)
+            return
+        }
         if let calls = callsPerResponse[id], calls > 0 {    // this response called tools → continue the turn
             callsPerResponse[id] = nil
             // Keep the continue response in the turn's modality — a typed turn stays text-only —
@@ -271,6 +277,19 @@ public actor OpenAIVoiceAssistant: OpenAIRealtimeSession, VoiceAssistant {
         emit(.state(.listening))
         resetTurn()
         await persist(user: user, reply: reply)
+    }
+
+    /// A response ended `failed`: close the turn (span included), surface the failure in-band, and
+    /// return the session to its resting state — the app decides whether to retry.
+    private func failTurn(responseId id: String, detail: String?) {
+        callsPerResponse[id] = nil
+        if id == currentResponseId { currentResponseId = nil }
+        isSpeaking = false
+        truncation.reset()
+        endTurn(error: nil)
+        emit(.error(code: "response_failed", message: detail ?? "response failed"))
+        emit(.state(.listening))   // same resting state a clean finish announces
+        resetTurn()
     }
 
     // MARK: - Turn lifecycle

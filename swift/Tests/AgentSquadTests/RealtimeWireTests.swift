@@ -211,16 +211,40 @@ import Testing
         #expect(RealtimeWire.decode(#"{"type":"response.output_text.delta","response_id":"r1","delta":"x"}"#) == .outputTextDelta(responseId: "r1", text: "x"))
         #expect(RealtimeWire.decode(#"{"type":"response.text.delta","response_id":"r1","delta":"x"}"#) == .outputTextDelta(responseId: "r1", text: "x"))
         #expect(RealtimeWire.decode(#"{"type":"response.created","response":{"id":"p1","metadata":{"role":"presenter"}}}"#) == .responseCreated(id: "p1", role: "presenter"))
-        #expect(RealtimeWire.decode(#"{"type":"response.done","response":{"id":"r1"}}"#) == .responseDone(id: "r1", usage: nil))
+        #expect(RealtimeWire.decode(#"{"type":"response.done","response":{"id":"r1"}}"#) == .responseDone(id: "r1", usage: nil, status: nil))
         #expect(RealtimeWire.decode(#"{"type":"response.done","response":{"id":"r1","usage":{"input_tokens":12,"output_tokens":34}}}"#)
-            == .responseDone(id: "r1", usage: RealtimeUsage(inputTokens: 12, outputTokens: 34, inputAudioTokens: nil, outputAudioTokens: nil, cachedInputTokens: nil)))
+            == .responseDone(id: "r1", usage: RealtimeUsage(inputTokens: 12, outputTokens: 34, inputAudioTokens: nil, outputAudioTokens: nil, cachedInputTokens: nil), status: nil))
         // Per-field tolerance: a usage object missing one count decodes that field to nil, not a failure.
         #expect(RealtimeWire.decode(#"{"type":"response.done","response":{"id":"r1","usage":{"input_tokens":12}}}"#)
-            == .responseDone(id: "r1", usage: RealtimeUsage(inputTokens: 12, outputTokens: nil, inputAudioTokens: nil, outputAudioTokens: nil, cachedInputTokens: nil)))
+            == .responseDone(id: "r1", usage: RealtimeUsage(inputTokens: 12, outputTokens: nil, inputAudioTokens: nil, outputAudioTokens: nil, cachedInputTokens: nil), status: nil))
         // The per-modality breakdown (audio / cached) is decoded from the nested token-detail objects.
         #expect(RealtimeWire.decode(#"{"type":"response.done","response":{"id":"r1","usage":{"input_tokens":1240,"output_tokens":820,"input_token_details":{"audio_tokens":1000,"cached_tokens":200},"output_token_details":{"audio_tokens":700}}}}"#)
-            == .responseDone(id: "r1", usage: RealtimeUsage(inputTokens: 1240, outputTokens: 820, inputAudioTokens: 1000, outputAudioTokens: 700, cachedInputTokens: 200)))
-        #expect(RealtimeWire.decode(#"{"type":"error","error":{"code":"response_cancel_not_active"}}"#) == .error(code: "response_cancel_not_active"))
+            == .responseDone(id: "r1", usage: RealtimeUsage(inputTokens: 1240, outputTokens: 820, inputAudioTokens: 1000, outputAudioTokens: 700, cachedInputTokens: 200), status: nil))
+        #expect(RealtimeWire.decode(#"{"type":"error","error":{"code":"response_cancel_not_active"}}"#) == .error(code: "response_cancel_not_active", message: nil))
+    }
+
+    @Test func decodesErrorEventDetail() {
+        // The GA `error` payload: `message` is required on the wire, `code` is nullable. Both must
+        // survive decode — the message is the only human-readable detail the server ever sends.
+        #expect(RealtimeWire.decode(#"{"type":"error","error":{"type":"invalid_request_error","code":"invalid_value","message":"Invalid value: 'text'.","param":"item.content[0].type","event_id":"evt_1"}}"#)
+            == .error(code: "invalid_value", message: "Invalid value: 'text'."))
+        #expect(RealtimeWire.decode(#"{"type":"error","error":{"type":"server_error","code":null,"message":"The server had an error."}}"#)
+            == .error(code: nil, message: "The server had an error."))
+    }
+
+    @Test func decodesResponseDoneStatus() {
+        // `failed` carries `status_details.error` (type/code — the API puts no message there).
+        #expect(RealtimeWire.decode(#"{"type":"response.done","response":{"id":"r1","status":"failed","status_details":{"type":"failed","error":{"type":"server_error","code":"internal_error"}}}}"#)
+            == .responseDone(id: "r1", usage: nil, status: RealtimeResponseStatus(status: "failed", detail: "server_error: internal_error")))
+        // A failed response missing the nested error object still surfaces the status.
+        #expect(RealtimeWire.decode(#"{"type":"response.done","response":{"id":"r1","status":"failed"}}"#)
+            == .responseDone(id: "r1", usage: nil, status: RealtimeResponseStatus(status: "failed", detail: nil)))
+        // `cancelled`/`incomplete` carry `status_details.reason`, and are not failures.
+        let cancelled = RealtimeWire.decode(#"{"type":"response.done","response":{"id":"r1","status":"cancelled","status_details":{"type":"cancelled","reason":"turn_detected"}}}"#)
+        #expect(cancelled == .responseDone(id: "r1", usage: nil, status: RealtimeResponseStatus(status: "cancelled", detail: "turn_detected")))
+        if case .responseDone(_, _, let status?) = cancelled! { #expect(!status.isFailure) } else { Issue.record("expected a status") }
+        #expect(RealtimeWire.decode(#"{"type":"response.done","response":{"id":"r1","status":"completed"}}"#)
+            == .responseDone(id: "r1", usage: nil, status: RealtimeResponseStatus(status: "completed", detail: nil)))
     }
 
     @Test func ignoresUnhandledEvents() {

@@ -520,4 +520,51 @@ import Testing
         try? await Task.sleep(for: .milliseconds(20))
         #expect(store.saved.isEmpty)   // a barged-in presenter produces no persisted pair
     }
+
+    // MARK: - Failed responses
+
+    @Test func failedGathererResponseEmitsErrorInsteadOfPresenting() async throws {
+        let transport = MockRealtimeTransport()
+        let log = EventLog()
+        let session = session(transport, tools: oddsTools())
+        log.start(session)
+        try await session.start()
+
+        transport.push(userSaid("odds?"))
+        transport.push(responseCreated("r1"))
+        transport.push(funcArgs("r1", "c1", "odds"))
+        transport.push(responseDone("r1"))       // tools → continue
+        transport.push(responseFailed("r2"))     // the continue died server-side
+
+        await eventually { !log.errors.isEmpty }
+        #expect(log.errorCodes == ["response_failed"])
+        #expect(log.errors == ["server_error: internal_error"])   // status_details.error, decoded
+        #expect(log.states.last == .listening)
+        // The turn never presented: the only response.create is the tool-continue one.
+        #expect(sentTypes(transport).filter { $0 == "response.create" }.count == 1)
+        #expect(!transport.sent.contains { $0.contains(#""role":"presenter""#) })
+    }
+
+    @Test func failedPresenterResponseSurfacesAndDoesNotPersist() async throws {
+        let transport = MockRealtimeTransport()
+        let log = EventLog()
+        let store = RecordingStore()
+        let session = session(transport, tools: oddsTools(), store: store)
+        log.start(session)
+        try await session.start()
+
+        transport.push(userSaid("odds?"))
+        transport.push(responseCreated("r1"))
+        transport.push(funcArgs("r1", "c1", "odds"))
+        transport.push(responseDone("r1"))
+        transport.push(responseDone("r2"))                        // settled → present()
+        transport.push(responseCreated("p1", role: "presenter"))
+        transport.push(responseFailed("p1"))                      // the presenter died mid-reply
+
+        await eventually { !log.errors.isEmpty }
+        #expect(log.errorCodes == ["response_failed"])
+        #expect(log.states.last == .listening)
+        try? await Task.sleep(for: .milliseconds(20))
+        #expect(store.saved.isEmpty)   // no reply was spoken — nothing to persist
+    }
 }

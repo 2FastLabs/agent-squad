@@ -45,7 +45,7 @@ import Testing
     @Test func inBandErrorDoesNotTerminateStream() async throws {
         let session = StubSession()
         try await session.start()
-        session.emit(.error("transient"))
+        session.emit(.error(code: nil, message: "transient"))
         session.emit(.state(.ready))
         await session.stop()
 
