@@ -260,7 +260,6 @@ public actor OpenAIGroundedVoiceAssistant: OpenAIRealtimeSession, VoiceAssistant
                 presenterId = nil
                 presenterActive = false
                 truncation.reset()   // clean finish — nothing left to truncate
-                defer { presenterStartedAt = nil }
                 let (user, reply) = (pendingUserText, replyText)   // snapshot + clear before the store await
                 // Record the spoken answer as a `presenter` generation (question in, reply out, presenter
                 // usage) under the turn, then close the turn. The gatherer's tool calls show as the turn's
@@ -283,6 +282,11 @@ public actor OpenAIGroundedVoiceAssistant: OpenAIRealtimeSession, VoiceAssistant
                 emit(.state(.listening))
                 pendingUserText = ""
                 replyText = ""
+                // Clear synchronously BEFORE the await: `persist` suspends the actor, and a reentrant
+                // next turn can set `presenterStartedAt` from its own response.created during that
+                // suspension — a `defer` after the await would wipe the new turn's timestamp and its
+                // presenter generation would fall back to Date() (~0 latency again).
+                presenterStartedAt = nil
                 await persist(user: user, reply: reply)
             }
             // else: a response we cancelled on barge-in (`presenterId` already cleared). The server still
