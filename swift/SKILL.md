@@ -128,9 +128,11 @@ signatures live in `Sources/AgentSquad/`.
   pattern-scrub PII — supply a custom `Redactor` for that.
 - **Realtime** is a peer runtime, not an agent; its `events` stream is non-throwing; needs
   `NSMicrophoneUsageDescription`; always `stop()`. In-band failures arrive as
-  `.error(code:message:)` — `code` is the API's machine code (e.g. `rate_limit_exceeded`) or
-  `response_failed` when a response ends with `status: "failed"`; `message` is the human-readable
-  detail for logs, not for verbatim display.
+  `.error(code:message:)` — `code` is the API's machine code (e.g. `rate_limit_exceeded`),
+  `response_failed` when a response ends with `status: "failed"`, or `transport_closed` when the
+  socket dies (then `events` finishes — the end-of-session signal); `message` is the
+  human-readable detail for logs, not for verbatim display. Failures are recorded on the trace
+  spans they end (turn/session/tool), so they export with `status: error` instead of vanishing.
 - **Barge-in truncation**: on interrupt the session sends `conversation.item.truncate` so the
   server drops the unheard audio + transcript from context (OpenAI docs' WebSocket procedure).
   Automatic when wired by `RealtimeRuntime` with the built-in outputs; a custom `AudioOutput`

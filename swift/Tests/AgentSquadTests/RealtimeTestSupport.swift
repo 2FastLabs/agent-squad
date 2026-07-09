@@ -11,6 +11,7 @@ final class MockRealtimeTransport: RealtimeTransport, @unchecked Sendable {
     private let lock = NSLock()
     private var _sent: [String] = []
     private var _closed = false
+    private var _receiveError: (any Error)?
     init() { (events, inbound) = AsyncStream.makeStream(of: String.self) }
     var sent: [String] { lock.withLock { _sent } }
     var closed: Bool { lock.withLock { _closed } }
@@ -18,6 +19,9 @@ final class MockRealtimeTransport: RealtimeTransport, @unchecked Sendable {
     func send(_ json: String) async throws { lock.withLock { _sent.append(json) } }
     func close() async { lock.withLock { _closed = true }; inbound.finish() }
     func push(_ json: String) { inbound.yield(json) }
+    /// Simulate the socket dying mid-session (vs. `close()`, the clean app-initiated teardown).
+    func die(with error: (any Error)? = nil) { lock.withLock { _receiveError = error }; inbound.finish() }
+    func lastReceiveError() async -> (any Error)? { lock.withLock { _receiveError } }
 }
 
 // MARK: - Event log
@@ -37,7 +41,15 @@ extension OpenAIGroundedVoiceAssistant: RealtimeEventSource {}
 final class EventLog: @unchecked Sendable {
     private let lock = NSLock()
     private var _events: [RealtimeEvent] = []
-    func start(_ session: some RealtimeEventSource) { Task { for await event in session.events { self.append(event) } } }
+    private var _finished = false
+    func start(_ session: some RealtimeEventSource) {
+        Task {
+            for await event in session.events { self.append(event) }
+            self.lock.withLock { self._finished = true }
+        }
+    }
+    /// True once the session's `events` stream has terminated.
+    var finished: Bool { lock.withLock { _finished } }
     private func append(_ event: RealtimeEvent) { lock.withLock { _events.append(event) } }
     var all: [RealtimeEvent] { lock.withLock { _events } }
     var states: [RealtimePhase] { all.compactMap { if case .state(let p) = $0 { return p } else { return nil } } }
@@ -62,10 +74,17 @@ final class RecordingTracer: Tracer, @unchecked Sendable {
         private var _output: [String: JSONValue] = [:]
         private var _usage: [String: (Int?, Int?)] = [:]
         private var _metadata: [String: JSONValue] = [:]
+        private var _errors: [String: String] = [:]
         func open(_ n: String, input: JSONValue? = nil) { lock.withLock { _opened.append(n); if let input { _input[n] = input } } }
         func setInput(_ n: String, _ input: JSONValue) { lock.withLock { _input[n] = input } }
         func setMetadata(_ n: String, _ metadata: JSONValue) { lock.withLock { _metadata[n] = metadata } }
-        func close(_ n: String, output: JSONValue?) { lock.withLock { _ended.append(n); if let output { _output[n] = output } } }
+        func close(_ n: String, output: JSONValue?, error: (any Error)? = nil) {
+            lock.withLock {
+                _ended.append(n)
+                if let output { _output[n] = output }
+                if let error { _errors[n] = String(reflecting: error) }   // same projection the processors use
+            }
+        }
         func record(_ n: String, prompt: Int?, completion: Int?) { lock.withLock { _usage[n] = (prompt, completion) } }
         var opened: [String] { lock.withLock { _opened } }
         var ended: [String] { lock.withLock { _ended } }
@@ -73,6 +92,7 @@ final class RecordingTracer: Tracer, @unchecked Sendable {
         func output(_ n: String) -> JSONValue? { lock.withLock { _output[n] } }
         func usage(_ n: String) -> (Int?, Int?)? { lock.withLock { _usage[n] } }
         func metadata(_ n: String) -> JSONValue? { lock.withLock { _metadata[n] } }
+        func error(_ n: String) -> String? { lock.withLock { _errors[n] } }
     }
     final class Span: GenerationHandle, @unchecked Sendable {
         let id: String
@@ -82,7 +102,7 @@ final class RecordingTracer: Tracer, @unchecked Sendable {
         func generation(_ name: String, model: String, input: JSONValue?) -> any GenerationHandle { recorder.open(name, input: input); return Span(id: name, recorder: recorder) }
         func setInput(_ input: JSONValue) { recorder.setInput(id, input) }
         func setMetadata(_ metadata: JSONValue) { recorder.setMetadata(id, metadata) }
-        func end(output: JSONValue?, error: (any Error)?) { recorder.close(id, output: output) }
+        func end(output: JSONValue?, error: (any Error)?) { recorder.close(id, output: output, error: error) }
         func usage(promptTokens: Int?, completionTokens: Int?) { recorder.record(id, prompt: promptTokens, completion: completionTokens) }
     }
     let recorder = Recorder()

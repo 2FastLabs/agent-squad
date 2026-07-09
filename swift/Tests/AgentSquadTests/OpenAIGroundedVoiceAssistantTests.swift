@@ -567,4 +567,26 @@ import Testing
         try? await Task.sleep(for: .milliseconds(20))
         #expect(store.saved.isEmpty)   // no reply was spoken — nothing to persist
     }
+
+    @Test func transportDeathEndsSpansWithTheErrorAndFinishesEvents() async throws {
+        let transport = MockRealtimeTransport()
+        let tracer = RecordingTracer()
+        let log = EventLog()
+        let session = session(transport, tools: oddsTools(), tracer: tracer)
+        log.start(session)
+        try await session.start()
+
+        transport.push(userSaid("odds?"))
+        transport.push(responseCreated("r1"))   // gatherer turn (and the session root) open
+        await eventually { tracer.recorder.opened.contains("voice.turn") }
+        transport.die(with: URLError(.networkConnectionLost))   // socket drops mid-gather
+
+        await eventually { log.errorCodes.contains("transport_closed") }
+        #expect(tracer.recorder.ended.contains("voice.turn"))
+        #expect(tracer.recorder.ended.contains("voice.session"))
+        #expect(tracer.recorder.error("voice.turn")?.contains("transport closed") == true)
+        #expect(tracer.recorder.input("voice.turn") == .string("odds?"))   // the question still rides the span
+        await eventually { log.finished }
+        #expect(log.finished)
+    }
 }

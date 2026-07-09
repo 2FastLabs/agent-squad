@@ -72,8 +72,26 @@ extension OpenAIRealtimeSession {
             for await frame in self.transport.events {
                 await self.handle(frame)
             }
+            await self.transportDidClose()
         }
         emit(.state(modality.input == .speech ? .listening : .ready))
+    }
+
+    /// The transport's inbound stream ended without `stop()` — a dead socket (offline, server
+    /// drop, an asynchronously-rejected handshake). Without this epilogue the failure is total
+    /// silence: the open turn/session spans are never ended (so never exported), and the app's
+    /// `events` loop just stalls. Close what's open with the failure, tell the app in-band, and
+    /// finish `events` so the consumer gets a real end-of-session signal.
+    func transportDidClose() async {
+        guard !stopped else { return }   // `stop()` also finishes the stream — that teardown is clean
+        stopped = true                    // the session is unusable; bar any late frame from reopening a span
+        let cause = await transport.lastReceiveError()
+        let error = RealtimeSessionError.transportClosed(underlying: cause.map { String(describing: $0) })
+        endTurn(error: error)
+        sessionSpan?.end(output: nil, error: error)
+        sessionSpan = nil
+        emit(.error(code: "transport_closed", message: error.debugDescription))
+        continuation.finish()
     }
 
     /// Close the connection and release the pump. The app must call this when done.
@@ -97,7 +115,10 @@ extension OpenAIRealtimeSession {
         let result: ToolResult
         do { result = try await tools.call(toolName, arguments: args) }
         catch { result = .failure("tool \(toolName) failed: \(error)") }
-        span?.end(output: result.structuredContent, error: nil)
+        // A failed call still feeds the model (it decides how to recover), but the span must say
+        // it failed — `error: nil` here exported every broken tool call as a success.
+        let failure = result.isError ? RealtimeSessionError.toolFailed(RealtimeCoding.failureText(result)) : nil
+        span?.end(output: result.structuredContent, error: failure)
         afterToolResult(name: toolName, result: result)
         try? await transport.send(RealtimeWire.functionOutput(callId: callId, output: RealtimeCoding.outputJSON(result)))
     }
@@ -178,5 +199,13 @@ enum RealtimeCoding {
         let payload: JSONValue = text.isEmpty ? result.structuredContent : .string(text)
         guard let data = try? JSONEncoder().encode(payload) else { return "{}" }
         return String(decoding: data, as: UTF8.self)
+    }
+
+    /// A failed result's message, for the tool span's error (`.failure(_:)` puts it in `content`).
+    static func failureText(_ result: ToolResult) -> String {
+        let text = (result.content ?? []).compactMap { part in
+            if case .text(let value) = part { return value } else { return nil }
+        }.joined(separator: "\n")
+        return text.isEmpty ? "tool reported an error" : text
     }
 }

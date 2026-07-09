@@ -15,6 +15,13 @@ public protocol RealtimeTransport: Sendable {
     var events: AsyncStream<String> { get }
     /// Close the connection and finish `events`.
     func close() async
+    /// The error that ended the inbound stream, if the transport kept it (`nil` = closed cleanly,
+    /// or unknown). Read after `events` finishes to attribute the loss. Defaults to `nil`.
+    func lastReceiveError() async -> (any Error)?
+}
+
+public extension RealtimeTransport {
+    func lastReceiveError() async -> (any Error)? { nil }
 }
 
 public enum RealtimeTransportError: Error, Equatable {

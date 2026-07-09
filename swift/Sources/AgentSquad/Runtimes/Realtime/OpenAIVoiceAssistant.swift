@@ -230,6 +230,9 @@ public actor OpenAIVoiceAssistant: OpenAIRealtimeSession, VoiceAssistant {
             await responseDone(id, usage: usage, status: status)
         case .error(let code, let message):
             if code == "response_cancel_not_active" { return }   // benign barge-in race
+            // The turn is broken (consumers close it on their side too) — record why on its span
+            // instead of leaving it to be force-closed later as a success.
+            endTurn(error: RealtimeSessionError.serverError(code: code, message: message ?? "realtime error"))
             emit(.error(code: code, message: message ?? code ?? "realtime error"))
         }
     }
@@ -286,7 +289,7 @@ public actor OpenAIVoiceAssistant: OpenAIRealtimeSession, VoiceAssistant {
         if id == currentResponseId { currentResponseId = nil }
         isSpeaking = false
         truncation.reset()
-        endTurn(error: nil)
+        endTurn(error: RealtimeSessionError.responseFailed(detail: detail))
         emit(.error(code: "response_failed", message: detail ?? "response failed"))
         emit(.state(.listening))   // same resting state a clean finish announces
         resetTurn()

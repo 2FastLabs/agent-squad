@@ -16,6 +16,7 @@ public actor URLSessionWebSocketTransport: RealtimeTransport {
     private let session: URLSession
     private var task: URLSessionWebSocketTask?
     private var receiveLoop: Task<Void, Never>?
+    private var receiveError: (any Error)?
 
     public init(
         url: URL = URL(string: "wss://api.openai.com/v1/realtime")!,
@@ -47,6 +48,8 @@ public actor URLSessionWebSocketTransport: RealtimeTransport {
         try await task.send(.string(json))
     }
 
+    public func lastReceiveError() async -> (any Error)? { receiveError }
+
     public func close() async {
         receiveLoop?.cancel()
         receiveLoop = nil
@@ -69,6 +72,7 @@ public actor URLSessionWebSocketTransport: RealtimeTransport {
                 @unknown default: break
                 }
             } catch {
+                receiveError = error   // kept for the session's post-mortem (`lastReceiveError`)
                 continuation.finish()
                 return
             }

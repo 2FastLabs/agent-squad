@@ -581,4 +581,93 @@ import Testing
         // No tool-continue response was created off the failed response.
         #expect(!sentTypes(transport).contains("response.create"))
     }
+
+    // MARK: - Failure tracing
+
+    @Test func transportDeathEndsSpansWithTheErrorAndFinishesEvents() async throws {
+        let transport = MockRealtimeTransport()
+        let tracer = RecordingTracer()
+        let log = EventLog()
+        let session = session(transport, tracer: tracer)
+        log.start(session)
+        try await session.start()
+
+        transport.push(responseCreated("r1"))   // a turn (and the session root) is open
+        await eventually { tracer.recorder.opened.contains("voice.turn") }
+        transport.die(with: URLError(.notConnectedToInternet))   // socket drops mid-turn
+
+        await eventually { log.errorCodes.contains("transport_closed") }
+        // The failure is exportable: both open spans were ended, carrying the transport error.
+        #expect(tracer.recorder.ended.contains("voice.turn"))
+        #expect(tracer.recorder.ended.contains("voice.session"))
+        #expect(tracer.recorder.error("voice.turn")?.contains("transport closed") == true)
+        #expect(tracer.recorder.error("voice.session")?.contains("transport closed") == true)
+        // The app gets a real end-of-session signal, not a stream that stalls forever.
+        await eventually { log.finished }
+        #expect(log.finished)
+
+        // A stop() after the death is a clean no-op — the session root isn't ended twice.
+        await session.stop()
+        #expect(tracer.recorder.ended.filter { $0 == "voice.session" }.count == 1)
+    }
+
+    @Test func cleanStopDoesNotEmitTransportClosed() async throws {
+        let transport = MockRealtimeTransport()
+        let log = EventLog()
+        let session = session(transport)
+        log.start(session)
+        try await session.start()
+
+        await session.stop()   // app-initiated teardown finishes the inbound stream too
+        await eventually { log.finished }
+        #expect(log.errors.isEmpty)   // …but that is not a transport failure
+    }
+
+    @Test func serverErrorEndsTheTurnSpanWithTheError() async throws {
+        let transport = MockRealtimeTransport()
+        let tracer = RecordingTracer()
+        let session = session(transport, tracer: tracer)
+        try await session.start()
+
+        transport.push(responseCreated("r1"))
+        await eventually { tracer.recorder.opened.contains("voice.turn") }
+        transport.push(serverError("rate_limit_exceeded", message: "Rate limit reached."))
+
+        await eventually { tracer.recorder.ended.contains("voice.turn") }
+        let error = tracer.recorder.error("voice.turn")
+        #expect(error?.contains("rate_limit_exceeded") == true)
+        #expect(error?.contains("Rate limit reached.") == true)
+    }
+
+    @Test func failedResponseRecordsTheFailureOnTheTurnSpan() async throws {
+        let transport = MockRealtimeTransport()
+        let tracer = RecordingTracer()
+        let session = session(transport, tracer: tracer)
+        try await session.start()
+
+        transport.push(responseCreated("r1"))
+        await eventually { tracer.recorder.opened.contains("voice.turn") }
+        transport.push(responseFailed("r1"))
+
+        await eventually { tracer.recorder.ended.contains("voice.turn") }
+        #expect(tracer.recorder.error("voice.turn")?.contains("server_error: internal_error") == true)
+    }
+
+    @Test func failedToolCallRecordsTheErrorOnTheToolSpan() async throws {
+        let transport = MockRealtimeTransport()
+        let tracer = RecordingTracer()
+        let tools = StubToolProvider(tool: AgentTool(name: "odds", description: "match odds"),
+                                     result: .failure("odds provider down"))
+        let session = OpenAIVoiceAssistant(name: "voice", transport: transport, tools: tools,
+                                           userId: "u1", sessionId: "s1", tracer: tracer)
+        try await session.start()
+
+        transport.push(responseCreated("r1"))
+        transport.push(funcArgs("r1", "c1", "odds"))
+
+        await eventually { tracer.recorder.ended.contains("tool.odds") }
+        // The model still gets the failure to recover from, but the span no longer claims success.
+        #expect(tracer.recorder.error("tool.odds")?.contains("odds provider down") == true)
+        await eventually { sentTypes(transport).contains("conversation.item.create") }
+    }
 }
