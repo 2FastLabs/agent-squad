@@ -566,7 +566,8 @@ import Testing
     @Test func failedResponseEmitsErrorAndDoesNotContinueTheTurn() async throws {
         let transport = MockRealtimeTransport()
         let log = EventLog()
-        let session = session(transport)
+        let tracer = RecordingTracer()
+        let session = session(transport, tracer: tracer)
         log.start(session)
         try await session.start()
 
@@ -580,5 +581,11 @@ import Testing
         #expect(log.states.last == .listening)                     // back to the resting state
         // No tool-continue response was created off the failed response.
         #expect(!sentTypes(transport).contains("response.create"))
+
+        // The turn span is closed WITH the failure, so the exported run is flagged errored, not `.ok`.
+        await eventually { tracer.recorder.ended.contains("voice.turn") }
+        let spanError = try #require(tracer.recorder.error("voice.turn"))
+        #expect(spanError.contains("response_failed"))
+        #expect(spanError.contains("server_error: internal_error"))
     }
 }

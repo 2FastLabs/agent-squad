@@ -88,6 +88,19 @@ public enum RealtimeEvent: Sendable {
     case error(code: String?, message: String)
 }
 
+/// A realtime turn that ended abnormally, recorded on the turn's trace span via `endTurn(error:)`
+/// so the exported run is flagged `.error` (not silently `.ok`). Mirrors the `.error` event handed
+/// to the app: `code` is the machine code (`response_failed`, or a server error's own code),
+/// `message` the human-readable detail. Internal — the app sees the failure as `RealtimeEvent.error`;
+/// this only exists to carry the failure into the span. Its `debugDescription` (what
+/// `ProcessingTracer` stringifies via `String(reflecting:)`) is `"<code>: <message>"`.
+struct RealtimeTurnError: Error, Equatable, CustomStringConvertible, CustomDebugStringConvertible {
+    let code: String?
+    let message: String
+    var description: String { code.map { "\($0): \(message)" } ?? message }
+    var debugDescription: String { description }
+}
+
 /// A long-lived, bidirectional voice session (e.g. OpenAI Realtime). A peer of `Orchestrator`, not
 /// an `AgentProtocol` — it owns its own control loop and reuses only the shared `ToolProvider` /
 /// `ChatStorage` / `Tracer` contracts.

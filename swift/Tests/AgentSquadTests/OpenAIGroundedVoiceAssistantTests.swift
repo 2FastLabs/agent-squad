@@ -526,7 +526,8 @@ import Testing
     @Test func failedGathererResponseEmitsErrorInsteadOfPresenting() async throws {
         let transport = MockRealtimeTransport()
         let log = EventLog()
-        let session = session(transport, tools: oddsTools())
+        let tracer = RecordingTracer()
+        let session = session(transport, tools: oddsTools(), tracer: tracer)
         log.start(session)
         try await session.start()
 
@@ -543,6 +544,12 @@ import Testing
         // The turn never presented: the only response.create is the tool-continue one.
         #expect(sentTypes(transport).filter { $0 == "response.create" }.count == 1)
         #expect(!transport.sent.contains { $0.contains(#""role":"presenter""#) })
+
+        // The turn span is closed WITH the failure, so the exported run is flagged errored, not `.ok`.
+        await eventually { tracer.recorder.ended.contains("voice.turn") }
+        let spanError = try #require(tracer.recorder.error("voice.turn"))
+        #expect(spanError.contains("response_failed"))
+        #expect(spanError.contains("server_error: internal_error"))
     }
 
     @Test func failedPresenterResponseSurfacesAndDoesNotPersist() async throws {

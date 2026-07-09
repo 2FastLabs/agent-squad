@@ -286,8 +286,10 @@ public actor OpenAIVoiceAssistant: OpenAIRealtimeSession, VoiceAssistant {
         if id == currentResponseId { currentResponseId = nil }
         isSpeaking = false
         truncation.reset()
-        endTurn(error: nil)
-        emit(.error(code: "response_failed", message: detail ?? "response failed"))
+        let message = detail ?? "response failed"
+        // Close the turn span WITH the failure so the exported run is flagged errored, not `.ok`.
+        endTurn(error: RealtimeTurnError(code: "response_failed", message: message))
+        emit(.error(code: "response_failed", message: message))
         emit(.state(.listening))   // same resting state a clean finish announces
         resetTurn()
     }
