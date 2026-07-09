@@ -129,7 +129,8 @@ signatures live in `Sources/AgentSquad/`.
 - **Realtime** is a peer runtime, not an agent; its `events` stream is non-throwing; needs
   `NSMicrophoneUsageDescription`; always `stop()`. In-band failures arrive as
   `.error(code:message:)` — `code` is the API's machine code (e.g. `rate_limit_exceeded`),
-  `response_failed` when a response ends with `status: "failed"`, or `transport_closed` when the
+  `response_failed` when the turn's live response ends with `status: "failed"` (a late failed
+  `done` for a response already cancelled by barge-in is consumed silently), or `transport_closed` when the
   socket dies (then `events` finishes — the end-of-session signal); `message` is the
   human-readable detail for logs, not for verbatim display. Failures are recorded on the trace
   spans they end (turn/session/tool), so they export with `status: error` instead of vanishing.

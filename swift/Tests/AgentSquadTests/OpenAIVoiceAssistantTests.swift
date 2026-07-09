@@ -582,6 +582,24 @@ import Testing
         #expect(!sentTypes(transport).contains("response.create"))
     }
 
+    @Test func lateFailedDoneForABargedInResponseIsConsumedSilently() async throws {
+        let transport = MockRealtimeTransport()
+        let log = EventLog()
+        let session = session(transport)
+        log.start(session)
+        try await session.start()
+
+        transport.push(responseCreated("r1"))
+        transport.push(#"{"type":"input_audio_buffer.speech_started"}"#)   // barge-in cancels r1
+        transport.push(responseFailed("r1"))    // the cancel raced a server-side failure — `done` lands failed
+        transport.push(responseCreated("r2"))   // the next turn's response
+        transport.push(responseDone("r2"))      // …finishes cleanly
+
+        await eventually { log.audioDones.count == 2 }
+        #expect(log.audioDones == [true, false])   // barge-in flush, then the new turn's clean finish
+        #expect(log.errors.isEmpty)                // the stale response's failure never surfaced
+    }
+
     // MARK: - Failure tracing
 
     @Test func transportDeathEndsSpansWithTheErrorAndFinishesEvents() async throws {

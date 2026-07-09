@@ -15,6 +15,10 @@ public protocol RealtimeTransport: Sendable {
     func send(_ json: String) async throws
     var events: AsyncStream<String> { get }
     func close() async
+    // The error that ended the inbound stream, if the transport kept it
+    // (nil = closed cleanly, or unknown). Defaulted to nil — implementing
+    // it is optional.
+    func lastReceiveError() async -> (any Error)?
 }
 
 public enum RealtimeTransportError: Error, Equatable {
@@ -24,6 +28,8 @@ public enum RealtimeTransportError: Error, Equatable {
 ```
 
 Frames are plain JSON strings. `connect()` may return before the WebSocket handshake completes; a failed handshake surfaces as `events` finishing or the next `send` throwing, not necessarily from `connect()` itself.
+
+`lastReceiveError()` is read by the session after `events` finishes to attribute the loss: the session ends its open trace spans with that error and emits `.error(code: "transport_closed", …)` so the app gets a real end-of-session signal instead of a silently stalled stream. A protocol extension defaults it to `nil`, so existing custom transports keep compiling.
 
 :::note
 `events` must be a `nonisolated let` so the protocol's synchronous getter is satisfied from outside the actor. Store the `AsyncStream.Continuation` as a matching `nonisolated let` and drive it from inside the actor — the pattern `URLSessionWebSocketTransport` uses.
@@ -96,7 +102,7 @@ One `URLSessionWebSocketTransport` instance represents one connection. Never sha
 
 ## How the receive loop works
 
-`connect()` resumes the `URLSessionWebSocketTask` and launches an internal `receive()` loop. Because `URLSessionWebSocketTask.receive()` must be re-armed after each message, the loop calls it in a `while !Task.isCancelled` cycle and yields each text frame to `events`. When the task errors or the loop is cancelled, the continuation finishes — ending the session's pump.
+`connect()` resumes the `URLSessionWebSocketTask` and launches an internal `receive()` loop. Because `URLSessionWebSocketTask.receive()` must be re-armed after each message, the loop calls it in a `while !Task.isCancelled` cycle and yields each text frame to `events`. When the task errors, the transport keeps the caught error (surfaced via `lastReceiveError()`) and finishes the continuation — the session then attributes the loss (e.g. an offline `URLError`), emits `.error(code: "transport_closed", …)`, and finishes its own `events` stream.
 
 ---
 

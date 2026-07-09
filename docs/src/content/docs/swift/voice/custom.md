@@ -17,12 +17,15 @@ public protocol RealtimeTransport: Sendable {
     func send(_ json: String) async throws // send one JSON frame
     var events: AsyncStream<String> { get }// inbound frames; finishes on close
     func close() async                    // close the connection and finish events
+    func lastReceiveError() async -> (any Error)?   // error that ended events (defaulted to nil)
 }
 ```
 
 :::note
 `events` must be a `nonisolated let` so the protocol's synchronous getter is satisfied from outside the actor. Store the `AsyncStream.Continuation` as a matching `nonisolated let` and drive it from inside the actor — exactly the pattern `URLSessionWebSocketTransport` uses.
 :::
+
+`lastReceiveError()` has a protocol-extension default of `nil`, so existing transports keep compiling without it. Implement it (keep the error that killed your receive loop and return it here) so the session can attribute an unexpected close: it reads the value after `events` finishes, ends its trace spans with that error, and emits `.error(code: "transport_closed", …)` with the underlying detail instead of a bare "closed".
 
 ---
 
@@ -107,6 +110,7 @@ public actor CustomWebSocketTransport: RealtimeTransport {
     private let session: URLSession
     private var task: URLSessionWebSocketTask?
     private var receiveLoop: Task<Void, Never>?
+    private var receiveError: (any Error)?
 
     public init(url: URL, bearerToken: String, extraHeaders: [String: String] = [:]) {
         var req = URLRequest(url: url)
@@ -138,6 +142,9 @@ public actor CustomWebSocketTransport: RealtimeTransport {
         continuation.finish()
     }
 
+    // Lets the session attribute an unexpected close (transport_closed) to the real cause.
+    public func lastReceiveError() async -> (any Error)? { receiveError }
+
     private func pump() async {
         guard let task else { return }
         while !Task.isCancelled {
@@ -148,6 +155,7 @@ public actor CustomWebSocketTransport: RealtimeTransport {
                 @unknown default:         break
                 }
             } catch {
+                receiveError = error   // keep for the session's post-mortem
                 continuation.finish()
                 return
             }

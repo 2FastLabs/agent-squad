@@ -238,9 +238,14 @@ public actor OpenAIVoiceAssistant: OpenAIRealtimeSession, VoiceAssistant {
     }
 
     private func responseDone(_ id: String, usage: RealtimeUsage?, status: RealtimeResponseStatus?) async {
-        guard liveResponses.contains(id) else { return }   // unknown / stale (cancelled) response
+        guard liveResponses.contains(id) else { return }   // unknown response
         liveResponses.remove(id)
         if let status, status.isFailure {
+            // Fail the turn only for the response we're actually running — the one speaking, or one
+            // whose tool outputs we'd continue from. A response cancelled on barge-in stays in
+            // `liveResponses` to consume its late `done` here, and a `response.cancel` racing a
+            // server-side failure lands that `done` as `failed` — stale, not the current turn's.
+            guard id == currentResponseId || (callsPerResponse[id] ?? 0) > 0 else { return }
             // The response died server-side (no `error` event accompanies this) — continuing the
             // tool loop would hang the turn. Close it and hand the app the failure in-band.
             failTurn(responseId: id, detail: status.detail)

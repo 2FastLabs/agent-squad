@@ -237,6 +237,13 @@ public actor OpenAIGroundedVoiceAssistant: OpenAIRealtimeSession, VoiceAssistant
     }
 
     private func responseDone(_ id: String, usage: RealtimeUsage?, status: RealtimeResponseStatus?) async {
+        // A presenter/direct we cancelled on barge-in (`presenterId` already re-pointed or cleared):
+        // consume its late `done` first, whatever the status — a `response.cancel` racing a
+        // server-side failure lands as `failed`, and failing the turn for it would kill the NEW turn.
+        if presenterResponses.contains(id), id != presenterId {
+            presenterResponses.remove(id)
+            return
+        }
         if let status, status.isFailure {
             // The response died server-side (gatherer, presenter, or direct alike) — presenting or
             // continuing from it would hang the turn. Close it and hand the app the failure in-band.

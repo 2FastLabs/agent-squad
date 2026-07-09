@@ -99,7 +99,7 @@ for await event in runtime.events {
     case .state(let phase):                        updateUI(phase)
     case .userTranscript(let text, final: true):   showTranscript(text)
     case .presenterText(let text, final: true):    showReply(text)
-    case .error(let msg):                          print("error:", msg)
+    case .error(let code, let message):            print("error [\(code ?? "unknown")]:", message)
     default: break
     }
 }
@@ -137,12 +137,14 @@ public enum RealtimeEvent: Sendable {
     case widget(UIPayload)                     // MCP Apps UI payload for this turn
     case audio(Data)                           // PCM16 @ 24 kHz — drain promptly
     case audioDone(interrupted: Bool)          // flush playback: barge-in or natural end
-    case error(String)
+    case error(code: String?, message: String) // in-band failure — code to classify, message to log
 }
 ```
 
 - `userTranscript` streams incrementally (`final: false`) then fires once more with `final: true`. `presenterText` mirrors that pattern.
 - `audio` frames arrive continuously while the model speaks — `RealtimeRuntime` routes them to `AudioOutput` automatically; an app observing `events` directly must drain them promptly.
+- `error` is an in-band failure, not the end of the stream. `code` is the machine-readable classifier: the API's own code (e.g. `rate_limit_exceeded`) for server `error` events, `response_failed` when the turn's live response ends with `status: "failed"` (a late failed `done` for a response already cancelled by barge-in is consumed silently — it never surfaces), or `transport_closed` when the socket dies. `message` is the human-readable detail — log it, don't show it verbatim.
+- After a `transport_closed` error the `events` stream finishes — that is the end-of-session signal; construct a fresh transport and session to reconnect.
 
 ---
 

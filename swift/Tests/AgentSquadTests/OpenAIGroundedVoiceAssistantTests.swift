@@ -568,6 +568,32 @@ import Testing
         #expect(store.saved.isEmpty)   // no reply was spoken — nothing to persist
     }
 
+    @Test func lateFailedDoneForABargedInPresenterDoesNotFailTheNewTurn() async throws {
+        let transport = MockRealtimeTransport()
+        let log = EventLog()
+        let session = session(transport, tools: oddsTools())
+        log.start(session)
+        try await session.start()
+
+        transport.push(userSaid("odds?"))
+        transport.push(responseCreated("r1"))
+        transport.push(funcArgs("r1", "c1", "odds"))
+        transport.push(responseDone("r1"))
+        transport.push(responseDone("r2"))                        // → present()
+        transport.push(responseCreated("p1", role: "presenter"))
+        transport.push(#"{"type":"input_audio_buffer.speech_started"}"#)   // barge-in mid-presenter
+        transport.push(userSaid("lineups?"))                      // a new turn is under way
+        transport.push(responseCreated("r3"))                     // its gatherer
+        transport.push(responseFailed("p1"))   // cancel raced a server-side failure — `done` lands failed
+        transport.push(funcArgs("r3", "c2", "odds"))
+        transport.push(responseDone("r3"))     // tools in → the new turn must still continue
+
+        // The stale presenter's failure neither surfaced nor wiped the new turn's state: r3's
+        // tool-continue response.create still goes out (present()'s was the first).
+        await eventually { sentTypes(transport).filter { $0 == "response.create" }.count >= 2 }
+        #expect(log.errors.isEmpty)
+    }
+
     @Test func transportDeathEndsSpansWithTheErrorAndFinishesEvents() async throws {
         let transport = MockRealtimeTransport()
         let tracer = RecordingTracer()

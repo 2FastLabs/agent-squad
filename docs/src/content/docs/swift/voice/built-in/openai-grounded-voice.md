@@ -165,8 +165,8 @@ for await event in runtime.events {
         showAssistantBubble(text)
     case .widget(let payload):
         renderWidget(payload)
-    case .error(let msg):
-        print("voice error:", msg)
+    case .error(let code, let message):
+        print("voice error [\(code ?? "unknown")]:", message)
     default:
         break
     }
