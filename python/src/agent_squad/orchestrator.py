@@ -79,7 +79,7 @@ class AgentSquad:
         } for key, agent in self.agents.items()}
 
     async def dispatch_to_agent(self, params: dict[str, Any]
-                                ) -> ConversationMessage | AsyncIterable[Any]:
+                                ) -> tuple[ConversationMessage | AsyncIterable[Any], Agent]:
         user_input = params['user_input']
         user_id = params['user_id']
         session_id = params['session_id']
@@ -90,7 +90,7 @@ class AgentSquad:
             return ConversationMessage(
                 role=ParticipantRole.ASSISTANT.value,
                 content=[{'text': "I'm sorry, but I need more information to understand your request. Could you please be more specific?"}]
-            )
+            ), None
 
         selected_agent = classifier_result.selected_agent
         agent_chat_history = await self.storage.fetch_chat(user_id, session_id, selected_agent.id)
@@ -106,7 +106,7 @@ class AgentSquad:
                                                    additional_params)
         )
 
-        return response
+        return response, selected_agent
 
     async def classify_request(self,
                              user_input: str,
@@ -145,7 +145,7 @@ class AgentSquad:
         """Process agent response and handle chat storage."""
         try:
             if classifier_result.selected_agent:
-                agent_response = await self.dispatch_to_agent({
+                agent_response, dispatched_agent = await self.dispatch_to_agent({
                     "user_input": user_input,
                     "user_id": user_id,
                     "session_id": session_id,
@@ -169,11 +169,22 @@ class AgentSquad:
                     classifier_result.selected_agent
                 )
 
+                # Save intermediate tool conversation messages (toolUse/toolResult pairs)
+                if dispatched_agent and hasattr(dispatched_agent, 'tool_conversation') and dispatched_agent.tool_conversation:
+                    await self.save_messages(
+                        dispatched_agent.tool_conversation,
+                        user_id,
+                        session_id,
+                        classifier_result.selected_agent
+                    )
+
                 final_response = None
                 if classifier_result.selected_agent.is_streaming_enabled():
                     if stream_response:
                         if isinstance(agent_response, AsyncIterable):
                             # Create an async generator function to handle the streaming
+                            selected_agent_ref = classifier_result.selected_agent
+                            dispatched_agent_ref = dispatched_agent
                             async def process_stream():
                                 full_message = None
                                 async for chunk in agent_response:
@@ -185,15 +196,26 @@ class AgentSquad:
                                         Logger.error("Invalid response type from agent. Expected AgentStreamResponse")
                                         pass
 
+                                # Save intermediate tool messages collected during streaming
+                                if dispatched_agent_ref and hasattr(dispatched_agent_ref, 'tool_conversation') and dispatched_agent_ref.tool_conversation:
+                                    await self.save_messages(
+                                        dispatched_agent_ref.tool_conversation,
+                                        user_id,
+                                        session_id,
+                                        selected_agent_ref
+                                    )
+
                                 if full_message:
                                     await self.save_message(full_message,
                                                         user_id,
                                                         session_id,
-                                                        classifier_result.selected_agent)
+                                                        selected_agent_ref)
 
 
                             final_response = process_stream()
                     else:
+                        selected_agent_ref = classifier_result.selected_agent
+                        dispatched_agent_ref = dispatched_agent
                         async def process_stream() -> ConversationMessage:
                             full_message = None
                             async for chunk in agent_response:
@@ -204,11 +226,20 @@ class AgentSquad:
                                     Logger.error("Invalid response type from agent. Expected AgentStreamResponse")
                                     pass
 
+                            # Save intermediate tool messages collected during streaming
+                            if dispatched_agent_ref and hasattr(dispatched_agent_ref, 'tool_conversation') and dispatched_agent_ref.tool_conversation:
+                                await self.save_messages(
+                                    dispatched_agent_ref.tool_conversation,
+                                    user_id,
+                                    session_id,
+                                    selected_agent_ref
+                                )
+
                             if full_message:
                                 await self.save_message(full_message,
                                                 user_id,
                                                 session_id,
-                                                classifier_result.selected_agent)
+                                                selected_agent_ref)
                             return full_message
                         final_response = await process_stream()
 
