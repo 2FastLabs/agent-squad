@@ -1,21 +1,26 @@
 """
 MCPToolProvider — drop-in AgentTools subclass that exposes MCP server tools.
 
-Usage example::
+Use the async factory :meth:`MCPToolProvider.create` to build a provider.
+This connects to all MCP servers upfront so that tool definitions are
+available synchronously when the agent builds its API request::
 
     from agent_squad.tools import MCPToolProvider, MCPServerConfig
     from agent_squad.agents import BedrockLLMAgent, BedrockLLMAgentOptions
 
+    provider = await MCPToolProvider.create([
+        MCPServerConfig(type="stdio", command="uvx", args=["my-mcp-server"]),
+        MCPServerConfig(type="sse", url="http://localhost:3000/sse"),
+    ])
+
     agent = BedrockLLMAgent(BedrockLLMAgentOptions(
         name="my-agent",
         description="An agent with MCP tools",
-        tool_config={
-            "tool": MCPToolProvider([
-                MCPServerConfig(type="stdio", command="uvx", args=["my-mcp-server"]),
-                MCPServerConfig(type="sse", url="http://localhost:3000/sse"),
-            ])
-        }
+        tool_config={"tool": provider}
     ))
+
+    # When done, clean up server connections:
+    await provider.disconnect()
 
 Requires the ``mcp`` extra::
 
@@ -68,20 +73,19 @@ class MCPServerConfig:
 class MCPToolProvider(AgentTools):
     """AgentTools subclass that proxies tools from one or more MCP servers.
 
-    Pass an instance directly as the ``tool`` value inside ``tool_config`` for
-    any ``BedrockLLMAgent``, ``AnthropicAgent``, or agent that accepts
-    ``AgentTools``::
+    Use the async class method :meth:`create` to build a provider.  It connects
+    to all configured MCP servers and populates the tool list before returning,
+    so tool definitions are available synchronously when the agent builds its
+    API request::
 
-        tool_config={
-            "tool": MCPToolProvider([
-                MCPServerConfig(type="stdio", command="uvx", args=["my-server"]),
-                MCPServerConfig(type="sse", url="http://localhost:3000/sse"),
-            ])
-        }
+        provider = await MCPToolProvider.create([
+            MCPServerConfig(type="stdio", command="uvx", args=["my-server"]),
+            MCPServerConfig(type="sse", url="http://localhost:3000/sse"),
+        ])
+        tool_config={"tool": provider}
 
-    Connections are established lazily on the first call that requires tool
-    metadata or tool execution.  All servers are initialised once and then
-    reused for the lifetime of the provider instance.
+    Call :meth:`disconnect` when the provider is no longer needed to cleanly
+    shut down stdio child processes or SSE connections.
 
     Args:
         servers: List of :class:`MCPServerConfig` describing the MCP servers to
@@ -103,8 +107,33 @@ class MCPToolProvider(AgentTools):
         # Maps tool_name → (ClientSession, mcp_tool)
         self._tool_map: dict[str, tuple[Any, Any]] = {}
         self._connected = False
-        # Keep hold of context-manager stacks so we can exit cleanly if needed
+        # Keep hold of context-manager stacks so we can exit them on disconnect
         self._cm_stack: list[Any] = []
+        self._sessions: list[Any] = []
+
+    @classmethod
+    async def create(
+        cls,
+        servers: list[MCPServerConfig],
+        callbacks: Optional[AgentToolCallbacks] = None,
+    ) -> "MCPToolProvider":
+        """Create a connected :class:`MCPToolProvider`.
+
+        Connects to all configured MCP servers and populates the internal tool
+        map before returning.  Use this instead of constructing the class
+        directly so that tool definitions are available when the agent builds
+        its API request.
+
+        Args:
+            servers: List of :class:`MCPServerConfig` instances.
+            callbacks: Optional lifecycle hooks.
+
+        Returns:
+            A fully connected :class:`MCPToolProvider` instance.
+        """
+        provider = cls(servers, callbacks)
+        await provider._ensure_connected()
+        return provider
 
     # ------------------------------------------------------------------
     # Internal connection management
@@ -140,6 +169,7 @@ class MCPToolProvider(AgentTools):
 
             session = ClientSession(read, write)
             await session.__aenter__()
+            self._sessions.append(session)
             await session.initialize()
 
             tools_result = await session.list_tools()
@@ -147,6 +177,29 @@ class MCPToolProvider(AgentTools):
                 self._tool_map[mcp_tool.name] = (session, mcp_tool)
 
         self._connected = True
+
+    async def disconnect(self) -> None:
+        """Disconnect from all MCP servers and release resources.
+
+        Closes all client sessions and transport context managers.  After
+        calling this method the provider must not be used again.
+        """
+        for session in self._sessions:
+            try:
+                await session.__aexit__(None, None, None)
+            except Exception:  # noqa: BLE001
+                pass
+        self._sessions = []
+
+        for cm in self._cm_stack:
+            try:
+                await cm.__aexit__(None, None, None)
+            except Exception:  # noqa: BLE001
+                pass
+        self._cm_stack = []
+
+        self._tool_map = {}
+        self._connected = False
 
     # ------------------------------------------------------------------
     # AgentTools interface
