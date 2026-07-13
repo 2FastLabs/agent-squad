@@ -23,20 +23,25 @@ export interface MCPServerConfig {
  * MCPToolProvider integrates one or more MCP (Model Context Protocol) servers
  * into the agent-squad tool system as a drop-in replacement for {@link AgentTools}.
  *
- * Pass it directly to `toolConfig.tool` — no other changes needed:
+ * Use the async factory {@link MCPToolProvider.create} to build a provider.
+ * It connects to all MCP servers before returning so that tool definitions are
+ * available synchronously when the agent builds its API request:
  *
  * @example
  * ```typescript
+ * const provider = await MCPToolProvider.create([
+ *   { type: "stdio", command: "uvx", args: ["my-mcp-server"] },
+ *   { type: "sse", url: "http://localhost:3000/sse" },
+ * ]);
+ *
  * const agent = new BedrockLLMAgent({
  *   name: "my-agent",
  *   description: "An agent with MCP tools",
- *   toolConfig: {
- *     tool: new MCPToolProvider([
- *       { type: "stdio", command: "uvx", args: ["my-mcp-server"] },
- *       { type: "sse", url: "http://localhost:3000/sse" },
- *     ]),
- *   },
+ *   toolConfig: { tool: provider },
  * });
+ *
+ * // When done, clean up server connections:
+ * await provider.disconnect();
  * ```
  *
  * The `@modelcontextprotocol/sdk` package must be installed separately:
@@ -56,6 +61,26 @@ export class MCPToolProvider extends AgentTools {
     // Start with an empty tools array; populated lazily on first use
     super([], callbacks);
     this.servers = servers;
+  }
+
+  /**
+   * Create a connected {@link MCPToolProvider}.
+   *
+   * Connects to all configured MCP servers and populates the internal tool list
+   * before returning. Use this instead of `new MCPToolProvider(...)` so that
+   * tool definitions are available when the agent builds its API request.
+   *
+   * @param servers - List of {@link MCPServerConfig} instances.
+   * @param callbacks - Optional lifecycle hooks.
+   * @returns A fully connected {@link MCPToolProvider}.
+   */
+  static async create(
+    servers: MCPServerConfig[],
+    callbacks?: AgentToolCallbacks
+  ): Promise<MCPToolProvider> {
+    const provider = new MCPToolProvider(servers, callbacks);
+    await provider.ensureConnected();
+    return provider;
   }
 
   // ---------------------------------------------------------------------------
