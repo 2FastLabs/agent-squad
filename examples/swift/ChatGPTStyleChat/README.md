@@ -6,7 +6,8 @@ Chat Apps on iOS."**
 A native SwiftUI chat that answers in **text *and* interactive widgets**, built on the
 [Agent Squad](https://github.com/2FastLabs/agent-squad) Swift framework. The assistant uses a
 **GroundedAgent** (a *Brain* that fetches via tools + a *Presenter* that speaks only from those
-facts), and a tool that returns a `UIPayload` widget rendered natively in a locked-down `WKWebView`.
+facts), and a tool that returns a `UIPayload` the app renders as a **native SwiftUI view**, chosen
+by `resourceURI` and hydrated from the tool's data.
 
 What this sample gives you on top of the article's snippets:
 
@@ -14,7 +15,7 @@ What this sample gives you on top of the article's snippets:
 - A **Widgets on/off toggle** in the header — the same agent in `ui: .forward` vs `ui: .suppress`,
   so you can see *text + widget* vs *text only* side by side.
 - The complete **Refresh round-trip**: the card's button calls an `.app`-only tool (invisible to the
-  LLM), the host pushes fresh data back into the same `WKWebView`, and the widget re-hydrates.
+  LLM) directly in Swift; the fresh `UIPayload` replaces the old one and the SwiftUI view re-renders.
 
 ## Requirements
 
@@ -53,10 +54,10 @@ framework.
 | `ChatGPTStyleChatApp.swift` | the `@main` entry point |
 | `Config.swift` | the API key plumbing (Prerequisites) |
 | `ShopToolProvider.swift` | **Step 3** — a tool that returns a widget (`get_order`) + an `.app`-only tool (`refresh_order`) |
-| `OrderCard.swift` | **Step 6** — the `orderCardHTML` template |
+| `OrderCardView.swift` | **Step 6** — the native SwiftUI widget for `ui://shop/order-card`, hydrated from `structuredContent` |
 | `ChatViewModel.swift` | **Step 2 & 4** — the GroundedAgent, prompts, and the `.forward`/`.suppress` toggle; the widget→app callback |
 | `ChatView.swift` | **Step 5** — the SwiftUI chat |
-| `WidgetHostView.swift` | **Step 6** — the `WKWebView` host: data injection, CSP from `UISecurity`, and the postMessage bridge |
+| `WidgetView.swift` | **Step 6** — maps a `UIPayload`'s `resourceURI` to a native SwiftUI view (add one `case` per widget) |
 
 ## Notes
 

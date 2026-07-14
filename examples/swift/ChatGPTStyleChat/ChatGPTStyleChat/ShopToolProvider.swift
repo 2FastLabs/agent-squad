@@ -74,16 +74,13 @@ struct ShopToolProvider: ToolProvider {
             content: [.text("Order \(orderId): \(status), ETA \(eta) via \(carrier).")],
             // structured data → not added to the model's context; hydrates the curator + widget
             structuredContent: data,
-            // the self-contained widget package
+            // the widget: just a resource id + the data. A native SwiftUI view renders it — see
+            // WidgetView, which maps the resourceURI to OrderCardView and hydrates it from this data.
             ui: UIPayload(
                 resourceURI: Self.orderCardURI,
-                mimeType: "text/html;profile=mcp-app",
-                template: .html(OrderCard.html),
-                structuredContent: data,
-                security: UISecurity(
-                    resourceDomains: ["https://cdn.myshop.com"],  // images allowed from here
-                    prefersBorder: true
-                )
+                // Native widget: no resource is fetched, so mimeType is unused by the render path.
+                mimeType: "application/json",
+                structuredContent: data
             )
         )
     }

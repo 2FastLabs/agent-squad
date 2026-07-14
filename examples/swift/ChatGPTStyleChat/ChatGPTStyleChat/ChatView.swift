@@ -31,11 +31,9 @@ struct ChatView: View {
                 ForEach(vm.items) { item in
                     VStack(alignment: item.isUser ? .trailing : .leading, spacing: 8) {
                         if let payload = item.widget {
-                            WidgetHostView(payload: payload) { tool, args in
+                            WidgetView(payload: payload) { tool, args in
                                 vm.handleWidgetTool(tool, arguments: args, for: item.id)
                             }
-                            .frame(height: 200)
-                            .clipShape(RoundedRectangle(cornerRadius: 14))
                         }
                         if !item.text.isEmpty {
                             Text(item.text)
