@@ -1,13 +1,27 @@
 """
-SummarizingChatStorage — a ChatStorage wrapper that compresses long conversation
-histories using a user-supplied async callable.
+SummarizingChatStorage — a ChatStorage wrapper that keeps conversation history
+compact by summarizing old messages whenever the in-memory buffer grows past a
+threshold.
 
-When the history for a given agent exceeds ``trigger_at`` message pairs, the
-wrapper calls the summarizer, writes the compressed result back to the inner
-store (so subsequent fetches are fast), and returns the compressed history.
+Raw messages are always written to the inner storage unchanged — they remain
+available for analytics, audit, or replay via ``fetch_all_chats``. The
+summarizer only affects what the agent sees through ``fetch_chat``.
 
-``fetch_all_chats`` is never intercepted — the classifier always sees the full
-cross-agent picture unmodified.
+How it works
+~~~~~~~~~~~~
+An in-memory buffer is maintained per (user, session, agent) slot.
+
+* The buffer is **activated lazily** on the first ``fetch_chat`` call that
+  finds history above the threshold.  Before that, all operations are pure
+  delegations to the inner storage.
+
+* Once the buffer is active, every ``save_chat_message`` / ``save_chat_messages``
+  appends the new message to it and, if the buffer exceeds the threshold again,
+  calls the summarizer **immediately** — so the next ``fetch_chat`` is always
+  fast and never triggers an LLM call.
+
+* ``fetch_all_chats`` is never intercepted: the raw full history is always
+  available to the classifier and for analytics or audit purposes.
 
 Usage::
 
@@ -24,14 +38,14 @@ Usage::
         return [
             ConversationMessage(
                 role=ParticipantRole.USER.value,
-                content=[{"text": f"[Conversation summary]: {summary_text}"}],
+                content=[{"text": f"[Summary]: {summary_text}"}],
             )
         ] + recent
 
     storage = SummarizingChatStorage(
         storage=InMemoryChatStorage(),
         summarizer=my_summarizer,
-        trigger_at=20,   # summarize when history exceeds 20 pairs
+        trigger_at=20,   # compress when buffer exceeds 20 pairs (40 messages)
         keep_last=2,     # keep the 2 most recent pairs verbatim
     )
 """
@@ -43,27 +57,21 @@ from agent_squad.types import ConversationMessage, TimestampedMessage
 
 
 class SummarizingChatStorage(ChatStorage):
-    """A ``ChatStorage`` wrapper that automatically compresses long histories.
+    """A ``ChatStorage`` wrapper that keeps agent context small via summarization.
 
-    Wraps any ``ChatStorage`` implementation. On every ``fetch_chat`` call,
-    if the returned history exceeds ``trigger_at`` message pairs the summarizer
-    callable is invoked, the compressed result is written back to the inner
-    store, and the compressed history is returned to the caller.
-
-    All other methods (``save_chat_message``, ``save_chat_messages``,
-    ``fetch_all_chats``) are pure delegations to the inner storage.
+    Raw messages are always saved to the inner storage untouched. The summarizer
+    only affects what ``fetch_chat`` returns to the agent. ``fetch_all_chats``
+    always returns the raw, full history.
 
     Args:
         storage: The inner ``ChatStorage`` to wrap.
-        summarizer: An async callable with the signature
-            ``async (history: list[ConversationMessage], keep_last: int)
-            -> list[ConversationMessage]``.
-            Receives the full history and the number of recent pairs to
-            preserve verbatim. Must return the compressed history.
-        trigger_at: Number of message **pairs** (user + assistant = 1 pair)
-            above which summarization is triggered. Default: 20.
-        keep_last: Number of most-recent message pairs to keep verbatim and
-            pass to the summarizer as context. Default: 2.
+        summarizer: Async callable ``(history, keep_last) -> compressed``.
+            Receives the current buffer and the number of recent pairs to keep
+            verbatim. Must return the compressed history.
+        trigger_at: Number of message **pairs** above which the buffer is
+            compressed. Default: 20.
+        keep_last: Number of most-recent message pairs passed to the summarizer
+            to keep verbatim. Default: 2.
     """
 
     def __init__(
@@ -78,16 +86,25 @@ class SummarizingChatStorage(ChatStorage):
         self._summarizer = summarizer
         self._trigger_at = trigger_at
         self._keep_last = keep_last
-        # Internal cache: key → compressed history.
-        # After summarization the compressed result is stored here so subsequent
-        # fetch_chat calls return immediately without hitting the inner storage or
-        # re-invoking the summarizer. A save_chat_message call invalidates the entry
-        # so the next fetch re-evaluates from the inner store.
-        self._cache: dict[str, list[ConversationMessage]] = {}
+        # Per-(user, session, agent) in-memory buffer of the current compressed
+        # history. A missing key means the buffer is not yet active for that slot
+        # — saves are pure delegations until the first fetch crosses the threshold.
+        self._buffers: dict[str, list[ConversationMessage]] = {}
 
     @staticmethod
-    def _cache_key(user_id: str, session_id: str, agent_id: str, max_history_size: Optional[int] = None) -> str:
-        return f"{user_id}#{session_id}#{agent_id}#{max_history_size}"
+    def _key(user_id: str, session_id: str, agent_id: str) -> str:
+        return f"{user_id}#{session_id}#{agent_id}"
+
+    @staticmethod
+    def _to_conversation_message(msg: Union[ConversationMessage, TimestampedMessage]) -> ConversationMessage:
+        if isinstance(msg, ConversationMessage):
+            return msg
+        return ConversationMessage(role=msg.role, content=msg.content)
+
+    async def _compress_if_needed(self, key: str) -> None:
+        buf = self._buffers.get(key)
+        if buf is not None and len(buf) > self._trigger_at * 2:
+            self._buffers[key] = await self._summarizer(buf, self._keep_last)
 
     async def save_chat_message(
         self,
@@ -97,8 +114,10 @@ class SummarizingChatStorage(ChatStorage):
         new_message: Union[ConversationMessage, TimestampedMessage],
         max_history_size: Optional[int] = None,
     ) -> bool:
-        # Invalidate cache so the next fetch_chat re-evaluates from the inner store.
-        self._cache.pop(self._cache_key(user_id, session_id, agent_id, max_history_size), None)
+        key = self._key(user_id, session_id, agent_id)
+        if key in self._buffers:
+            self._buffers[key].append(self._to_conversation_message(new_message))
+            await self._compress_if_needed(key)
         return await self._storage.save_chat_message(
             user_id, session_id, agent_id, new_message, max_history_size
         )
@@ -111,8 +130,11 @@ class SummarizingChatStorage(ChatStorage):
         new_messages: Union[list[ConversationMessage], list[TimestampedMessage]],
         max_history_size: Optional[int] = None,
     ) -> bool:
-        # Invalidate cache so the next fetch_chat re-evaluates from the inner store.
-        self._cache.pop(self._cache_key(user_id, session_id, agent_id, max_history_size), None)
+        key = self._key(user_id, session_id, agent_id)
+        if key in self._buffers:
+            for msg in new_messages:
+                self._buffers[key].append(self._to_conversation_message(msg))
+            await self._compress_if_needed(key)
         return await self._storage.save_chat_messages(
             user_id, session_id, agent_id, new_messages, max_history_size
         )
@@ -124,20 +146,18 @@ class SummarizingChatStorage(ChatStorage):
         agent_id: str,
         max_history_size: Optional[int] = None,
     ) -> list[ConversationMessage]:
-        key = self._cache_key(user_id, session_id, agent_id, max_history_size)
+        key = self._key(user_id, session_id, agent_id)
 
-        # Return cached compressed history if available.
-        if key in self._cache:
-            return self._cache[key]
+        # Buffer is active — return it directly (no storage read, no LLM call).
+        if key in self._buffers:
+            return self._buffers[key]
 
-        # Fetch the full history — we need it untruncated to evaluate the
-        # trigger threshold. max_history_size is accepted for interface
-        # compatibility but size management is delegated to trigger_at/keep_last.
-        history = await self._storage.fetch_chat(user_id, session_id, agent_id)
+        # Cold start: load raw history from the inner store.
+        history = await self._storage.fetch_chat(user_id, session_id, agent_id, max_history_size)
 
         if len(history) > self._trigger_at * 2:
             compressed = await self._summarizer(history, self._keep_last)
-            self._cache[key] = compressed
+            self._buffers[key] = compressed
             return compressed
 
         return history
@@ -147,5 +167,5 @@ class SummarizingChatStorage(ChatStorage):
         user_id: str,
         session_id: str,
     ) -> list[ConversationMessage]:
-        # Never intercepted — the classifier must see the full cross-agent history.
+        # Never intercepted — raw history always available for analytics/audit.
         return await self._storage.fetch_all_chats(user_id, session_id)

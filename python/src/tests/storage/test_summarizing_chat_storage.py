@@ -5,37 +5,37 @@ from agent_squad.storage import InMemoryChatStorage
 from agent_squad.storage.summarizing_chat_storage import SummarizingChatStorage
 
 
-def make_message(role: str, text: str) -> ConversationMessage:
-    return ConversationMessage(role=role, content=[{"text": text}])
+def user_msg(text: str) -> ConversationMessage:
+    return ConversationMessage(role=ParticipantRole.USER.value, content=[{"text": text}])
 
 
-def make_history(num_pairs: int) -> list[ConversationMessage]:
-    """Return a list of alternating user/assistant messages (num_pairs pairs)."""
-    history = []
-    for i in range(num_pairs):
-        history.append(make_message(ParticipantRole.USER.value, f"User message {i + 1}"))
-        history.append(make_message(ParticipantRole.ASSISTANT.value, f"Assistant message {i + 1}"))
-    return history
+def assistant_msg(text: str) -> ConversationMessage:
+    return ConversationMessage(role=ParticipantRole.ASSISTANT.value, content=[{"text": text}])
 
 
-async def identity_summarizer(history, keep_last):
-    """Summarizer that returns the last keep_last pairs verbatim."""
-    return history[-(keep_last * 2):]
+def make_history(n_pairs: int) -> list[ConversationMessage]:
+    msgs = []
+    for i in range(n_pairs):
+        msgs.append(user_msg(f"User {i + 1}"))
+        msgs.append(assistant_msg(f"Assistant {i + 1}"))
+    return msgs
 
 
-@pytest.fixture
-def inner_storage():
-    return InMemoryChatStorage()
+async def seed(storage: InMemoryChatStorage, msgs: list[ConversationMessage]) -> None:
+    for msg in msgs:
+        await storage.save_chat_message("u", "s", "a", msg)
 
+
+# ---------------------------------------------------------------------------
+# fetch_chat — lazy buffer activation
+# ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_below_trigger_returns_history_unchanged(inner_storage):
-    """History below trigger passes through with no summarizer call."""
-    summarizer = AsyncMock(side_effect=identity_summarizer)
-    storage = SummarizingChatStorage(inner_storage, summarizer, trigger_at=5, keep_last=2)
-
-    history = make_history(3)
-    await inner_storage.save_chat_messages("u", "s", "a", history)
+async def test_below_trigger_returns_raw_history():
+    inner = InMemoryChatStorage()
+    await seed(inner, make_history(3))  # 6 msgs, trigger_at=5 → threshold=10
+    summarizer = AsyncMock(side_effect=lambda h, k: h)
+    storage = SummarizingChatStorage(inner, summarizer, trigger_at=5, keep_last=2)
 
     result = await storage.fetch_chat("u", "s", "a")
 
@@ -44,13 +44,11 @@ async def test_below_trigger_returns_history_unchanged(inner_storage):
 
 
 @pytest.mark.asyncio
-async def test_at_trigger_boundary_does_not_summarize(inner_storage):
-    """Exactly trigger_at*2 messages — condition is strictly >, no summarization."""
-    summarizer = AsyncMock(side_effect=identity_summarizer)
-    storage = SummarizingChatStorage(inner_storage, summarizer, trigger_at=5, keep_last=2)
-
-    history = make_history(5)  # exactly 10 messages = trigger_at * 2
-    await inner_storage.save_chat_messages("u", "s", "a", history)
+async def test_at_boundary_no_summarization():
+    inner = InMemoryChatStorage()
+    await seed(inner, make_history(5))  # exactly 10 = trigger_at * 2
+    summarizer = AsyncMock(side_effect=lambda h, k: h)
+    storage = SummarizingChatStorage(inner, summarizer, trigger_at=5, keep_last=2)
 
     result = await storage.fetch_chat("u", "s", "a")
 
@@ -59,158 +57,180 @@ async def test_at_trigger_boundary_does_not_summarize(inner_storage):
 
 
 @pytest.mark.asyncio
-async def test_above_trigger_calls_summarizer(inner_storage):
-    """History above trigger calls summarizer exactly once."""
-    summarizer = AsyncMock(side_effect=identity_summarizer)
-    storage = SummarizingChatStorage(inner_storage, summarizer, trigger_at=5, keep_last=2)
-
-    history = make_history(6)  # 12 messages > 10
-    await inner_storage.save_chat_messages("u", "s", "a", history)
+async def test_above_trigger_calls_summarizer_on_fetch():
+    inner = InMemoryChatStorage()
+    await seed(inner, make_history(6))  # 12 > 10
+    summarizer = AsyncMock(side_effect=lambda h, k: h[-k * 2:])
+    storage = SummarizingChatStorage(inner, summarizer, trigger_at=5, keep_last=2)
 
     await storage.fetch_chat("u", "s", "a")
 
     summarizer.assert_called_once()
+    assert summarizer.call_args[0][1] == 2
 
 
 @pytest.mark.asyncio
-async def test_summarizer_receives_full_history(inner_storage):
-    """Summarizer receives the full history as first argument."""
-    received_history = []
-
-    async def capturing_summarizer(history, keep_last):
-        received_history.extend(history)
-        return history[-4:]
-
-    storage = SummarizingChatStorage(inner_storage, capturing_summarizer, trigger_at=5, keep_last=2)
-    history = make_history(6)
-    await inner_storage.save_chat_messages("u", "s", "a", history)
-
-    await storage.fetch_chat("u", "s", "a")
-
-    assert len(received_history) == 12
-
-
-@pytest.mark.asyncio
-async def test_summarizer_receives_keep_last(inner_storage):
-    """Summarizer receives keep_last as second argument."""
-    received_keep_last = []
-
-    async def capturing_summarizer(history, keep_last):
-        received_keep_last.append(keep_last)
-        return history[-4:]
-
-    storage = SummarizingChatStorage(inner_storage, capturing_summarizer, trigger_at=5, keep_last=3)
-    history = make_history(6)
-    await inner_storage.save_chat_messages("u", "s", "a", history)
-
-    await storage.fetch_chat("u", "s", "a")
-
-    assert received_keep_last == [3]
-
-
-@pytest.mark.asyncio
-async def test_fetch_chat_returns_compressed_result(inner_storage):
-    """fetch_chat returns the compressed result from the summarizer."""
-    compressed = [make_message(ParticipantRole.USER.value, "Summary of previous conversation")]
-
-    async def fixed_summarizer(history, keep_last):
-        return compressed
-
-    storage = SummarizingChatStorage(inner_storage, fixed_summarizer, trigger_at=5, keep_last=2)
-    history = make_history(6)
-    await inner_storage.save_chat_messages("u", "s", "a", history)
+async def test_fetch_returns_compressed_result():
+    inner = InMemoryChatStorage()
+    await seed(inner, make_history(6))
+    compressed = [user_msg("Summary")]
+    summarizer = AsyncMock(return_value=compressed)
+    storage = SummarizingChatStorage(inner, summarizer, trigger_at=5, keep_last=2)
 
     result = await storage.fetch_chat("u", "s", "a")
 
-    assert len(result) == 1
-    assert result[0].content[0]["text"] == "Summary of previous conversation"
+    assert result == compressed
 
 
 @pytest.mark.asyncio
-async def test_save_back_caches_compressed_result(inner_storage):
-    """After summarization, the compressed result is cached so subsequent fetches
-    return it directly without re-calling the summarizer or inner storage."""
-    call_count = 0
-
-    async def counting_summarizer(history, keep_last):
-        nonlocal call_count
-        call_count += 1
-        return [make_message(ParticipantRole.USER.value, "Compressed")]
-
-    storage = SummarizingChatStorage(inner_storage, counting_summarizer, trigger_at=5, keep_last=2)
-    history = make_history(6)
-    await inner_storage.save_chat_messages("u", "s", "a", history)
-
-    first = await storage.fetch_chat("u", "s", "a")
-    second = await storage.fetch_chat("u", "s", "a")
-
-    # Summarizer called only once — cache served the second fetch.
-    assert call_count == 1
-    assert len(first) == 1
-    assert first[0].content[0]["text"] == "Compressed"
-    assert second == first
-
-
-@pytest.mark.asyncio
-async def test_subsequent_fetch_uses_compressed_history(inner_storage):
-    """After save-back, subsequent fetch returns the compressed history."""
-    call_count = 0
-
-    async def counting_summarizer(history, keep_last):
-        nonlocal call_count
-        call_count += 1
-        return [make_message(ParticipantRole.USER.value, "Summary")]
-
-    storage = SummarizingChatStorage(inner_storage, counting_summarizer, trigger_at=5, keep_last=2)
-    history = make_history(6)
-    await inner_storage.save_chat_messages("u", "s", "a", history)
+async def test_subsequent_fetch_returns_buffer_without_calling_summarizer_again():
+    inner = InMemoryChatStorage()
+    await seed(inner, make_history(6))
+    summarizer = AsyncMock(return_value=[user_msg("Summary")])
+    storage = SummarizingChatStorage(inner, summarizer, trigger_at=5, keep_last=2)
 
     await storage.fetch_chat("u", "s", "a")
     result = await storage.fetch_chat("u", "s", "a")
 
-    # Summarizer called only once — second fetch uses the saved-back compressed history
-    assert call_count == 1
+    summarizer.assert_called_once()
     assert len(result) == 1
+    assert result[0].content[0]["text"] == "Summary"
+
+
+# ---------------------------------------------------------------------------
+# save — pure delegation before buffer active
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_save_before_buffer_active_delegates_to_inner():
+    inner = InMemoryChatStorage()
+    summarizer = AsyncMock()
+    storage = SummarizingChatStorage(inner, summarizer, trigger_at=5, keep_last=2)
+
+    await storage.save_chat_message("u", "s", "a", user_msg("Hello"))
+
+    saved = await inner.fetch_chat("u", "s", "a")
+    assert len(saved) == 1
+    summarizer.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# save — buffer management after activation
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_save_after_buffer_active_appends_to_buffer():
+    inner = InMemoryChatStorage()
+    await seed(inner, make_history(6))
+    summarizer = AsyncMock(return_value=[user_msg("Summary")])
+    storage = SummarizingChatStorage(inner, summarizer, trigger_at=5, keep_last=2)
+
+    await storage.fetch_chat("u", "s", "a")  # activates buffer = [Summary]
+    await storage.save_chat_message("u", "s", "a", user_msg("New"))
+
+    result = await storage.fetch_chat("u", "s", "a")
+    assert len(result) == 2  # [Summary, New]
+    assert result[-1].content[0]["text"] == "New"
 
 
 @pytest.mark.asyncio
-async def test_fetch_all_chats_never_intercepted(inner_storage):
-    """fetch_all_chats is never intercepted regardless of history length."""
-    summarizer = AsyncMock(side_effect=identity_summarizer)
-    storage = SummarizingChatStorage(inner_storage, summarizer, trigger_at=5, keep_last=2)
+async def test_save_triggers_compression_when_buffer_exceeds_threshold():
+    inner = InMemoryChatStorage()
+    await seed(inner, make_history(6))
 
-    history = make_history(6)
-    await inner_storage.save_chat_messages("u", "s", "a", history)
+    call_count = 0
 
+    async def summarizer(history, keep_last):
+        nonlocal call_count
+        call_count += 1
+        return [user_msg(f"Summary {call_count}")]
+
+    storage = SummarizingChatStorage(inner, summarizer, trigger_at=5, keep_last=2)
+
+    await storage.fetch_chat("u", "s", "a")
+    assert call_count == 1
+
+    for i in range(11):
+        role = ParticipantRole.USER if i % 2 == 0 else ParticipantRole.ASSISTANT
+        await storage.save_chat_message("u", "s", "a",
+            ConversationMessage(role=role.value, content=[{"text": f"m{i}"}]))
+
+    assert call_count == 2
+
+    result = await storage.fetch_chat("u", "s", "a")
+    # Buffer = [Summary 2] + any messages added after the second compression.
+    assert result[0].content[0]["text"] == "Summary 2"
+
+
+# ---------------------------------------------------------------------------
+# fetch_all_chats — never intercepted
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_fetch_all_chats_returns_raw_history():
+    inner = InMemoryChatStorage()
+    await seed(inner, make_history(6))
+    summarizer = AsyncMock(return_value=[user_msg("Summary")])
+    storage = SummarizingChatStorage(inner, summarizer, trigger_at=5, keep_last=2)
+
+    await storage.fetch_chat("u", "s", "a")
     result = await storage.fetch_all_chats("u", "s")
 
-    summarizer.assert_not_called()
     assert len(result) == 12
+    summarizer.assert_called_once()
 
 
-@pytest.mark.asyncio
-async def test_save_chat_message_delegates_to_inner(inner_storage):
-    """save_chat_message reaches the inner storage unchanged."""
-    summarizer = AsyncMock(side_effect=identity_summarizer)
-    storage = SummarizingChatStorage(inner_storage, summarizer, trigger_at=5, keep_last=2)
-
-    msg = make_message(ParticipantRole.USER.value, "Hello")
-    await storage.save_chat_message("u", "s", "a", msg)
-
-    saved = await inner_storage.fetch_chat("u", "s", "a")
-    assert len(saved) == 1
-    assert saved[0].content[0]["text"] == "Hello"
-
+# ---------------------------------------------------------------------------
+# Base storage integrity
+# ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_summarizer_error_propagates(inner_storage):
-    """If the summarizer raises, fetch_chat propagates the exception."""
-    async def failing_summarizer(history, keep_last):
-        raise ValueError("summarizer failed")
+async def test_base_storage_always_receives_raw_messages():
+    inner = InMemoryChatStorage()
+    await seed(inner, make_history(6))
+    summarizer = AsyncMock(return_value=[user_msg("Summary")])
+    storage = SummarizingChatStorage(inner, summarizer, trigger_at=5, keep_last=2)
 
-    storage = SummarizingChatStorage(inner_storage, failing_summarizer, trigger_at=5, keep_last=2)
-    history = make_history(6)
-    await inner_storage.save_chat_messages("u", "s", "a", history)
+    await storage.fetch_chat("u", "s", "a")
+    await storage.save_chat_message("u", "s", "a", user_msg("New message"))
 
-    with pytest.raises(ValueError, match="summarizer failed"):
+    raw = await inner.fetch_chat("u", "s", "a")
+    assert len(raw) == 13
+    assert raw[-1].content[0]["text"] == "New message"
+
+
+# ---------------------------------------------------------------------------
+# Error propagation
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_summarizer_error_propagates_from_fetch():
+    inner = InMemoryChatStorage()
+    await seed(inner, make_history(6))
+    summarizer = AsyncMock(side_effect=RuntimeError("summarizer failed"))
+    storage = SummarizingChatStorage(inner, summarizer, trigger_at=5, keep_last=2)
+
+    with pytest.raises(RuntimeError, match="summarizer failed"):
         await storage.fetch_chat("u", "s", "a")
+
+
+@pytest.mark.asyncio
+async def test_summarizer_error_propagates_from_save():
+    inner = InMemoryChatStorage()
+    await seed(inner, make_history(6))
+
+    call_count = 0
+
+    async def summarizer(history, keep_last):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return [user_msg("Summary")]
+        raise RuntimeError("summarizer failed on save")
+
+    storage = SummarizingChatStorage(inner, summarizer, trigger_at=5, keep_last=2)
+    await storage.fetch_chat("u", "s", "a")
+
+    with pytest.raises(RuntimeError, match="summarizer failed on save"):
+        for i in range(11):
+            await storage.save_chat_message("u", "s", "a", user_msg(f"m{i}"))
