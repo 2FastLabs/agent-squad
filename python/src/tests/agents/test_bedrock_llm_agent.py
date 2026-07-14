@@ -832,3 +832,26 @@ def test_additional_model_request_fields(mock_boto3_client):
     # Verify topP is present when thinking is not enabled
     assert "topP" in result["inferenceConfig"]
     assert result["inferenceConfig"]["topP"] == 0.9  # Default value
+
+
+def test_empty_tool_config_omits_toolconfig(mock_boto3_client):
+    """An all-hidden/empty tool provider must not send toolConfig — Bedrock rejects tools: []."""
+    options = BedrockLLMAgentOptions(
+        name="TestAgent", description="A test agent", region="us-west-2",
+        tool_config={"tool": AgentTools([])},
+    )
+    agent = BedrockLLMAgent(options)
+    command = agent._build_conversation_command([], "system prompt")
+    assert "toolConfig" not in command
+
+
+def test_nonempty_tool_config_sets_toolconfig(mock_boto3_client):
+    tools = AgentTools([AgentTool(name="t", func=lambda x: "ok")])
+    options = BedrockLLMAgentOptions(
+        name="TestAgent", description="A test agent", region="us-west-2",
+        tool_config={"tool": tools},
+    )
+    agent = BedrockLLMAgent(options)
+    command = agent._build_conversation_command([], "system prompt")
+    assert "toolConfig" in command
+    assert len(command["toolConfig"]["tools"]) == 1

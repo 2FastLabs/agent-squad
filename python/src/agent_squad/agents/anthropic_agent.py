@@ -175,7 +175,11 @@ class AnthropicAgent(Agent):
                 json_input[key] = value
 
         if self.tool_config:
-            json_input["tools"] = self._prepare_tool_config()
+            tools = self._prepare_tool_config()
+            # Only attach a non-empty tool list (e.g. an MCP provider whose tools are all app-only
+            # yields none the model can call).
+            if tools:
+                json_input["tools"] = tools
 
         return json_input
 

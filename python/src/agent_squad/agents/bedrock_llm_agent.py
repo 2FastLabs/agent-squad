@@ -159,7 +159,11 @@ class BedrockLLMAgent(Agent):
             command["additionalModelRequestFields"] = self.additional_model_request_fields
 
         if self.tool_config:
-            command["toolConfig"] = self._prepare_tool_config()
+            tool_config = self._prepare_tool_config()
+            # Skip an empty tool list — Bedrock rejects toolConfig.tools with fewer than 1 entry
+            # (e.g. an MCP provider whose tools are all app-only / hidden from the model).
+            if tool_config.get("tools"):
+                command["toolConfig"] = tool_config
 
         return command
 

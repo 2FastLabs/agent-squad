@@ -837,3 +837,24 @@ async def test_handle_streaming_with_tool_use():
 
     # Verify the messages list was updated with the tool response
     assert input_data["messages"][-1] == tool_response
+
+def test_empty_tool_config_omits_tools(mock_anthropic):
+    """An all-hidden/empty tool provider must not attach an empty tools list."""
+    options = AnthropicAgentOptions(
+        name="TestAgent", description="A test agent", client=Anthropic(api_key="test"),
+        tool_config={"tool": AgentTools([])},
+    )
+    agent = AnthropicAgent(options)
+    json_input = agent._build_input([], "system prompt")
+    assert "tools" not in json_input
+
+
+def test_nonempty_tool_config_attaches_tools(mock_anthropic):
+    tools = AgentTools([AgentTool(name="t", func=lambda x: "ok")])
+    options = AnthropicAgentOptions(
+        name="TestAgent", description="A test agent", client=Anthropic(api_key="test"),
+        tool_config={"tool": tools},
+    )
+    agent = AnthropicAgent(options)
+    json_input = agent._build_input([], "system prompt")
+    assert "tools" in json_input and len(json_input["tools"]) == 1
