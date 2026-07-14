@@ -34,8 +34,8 @@ private actor SummarizationCache {
 ///
 /// Wraps any `ChatStorage` implementation. On every `fetch` call, if the
 /// returned history exceeds `triggerAt` message pairs the user-supplied
-/// `summarizer` callable is invoked. The compressed result is written back to
-/// the base store and cached internally so subsequent fetches are fast.
+/// `summarizer` callable is invoked. The compressed result is cached in memory
+/// so subsequent fetches are fast without hitting the base store again.
 ///
 /// `fetchAllChats` is never intercepted — the classifier always sees the full
 /// cross-agent history unmodified.
@@ -107,15 +107,10 @@ public struct SummarizingChatStorage: ChatStorage {
 
         let compressed = try await summarizer(history, keepLast)
 
-        // Cache the result and write back to the base store so persistent
-        // backends (FileChatStorage, DeviceChatStorage) also hold the
-        // compressed version.
+        // Cache the compressed result in memory. All bundled stores use
+        // append semantics in saveMessages, so writing back would corrupt
+        // the history by adding the summary on top of the original messages.
         await cache.set(key: key, messages: compressed)
-        try await base.saveMessages(
-            compressed,
-            userId: userId, sessionId: sessionId, agentId: agentId,
-            maxMessages: nil
-        )
 
         return compressed
     }

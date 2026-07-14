@@ -138,7 +138,10 @@ import Testing
         #expect(texts(result) == ["Summary of conversation"])
     }
 
-    @Test func saveBackOccursAfterSummarization() async throws {
+    @Test func noWriteBackToBaseStoreAfterSummarization() async throws {
+        // saveMessages in all bundled stores appends rather than replaces, so
+        // writing back the compressed result would corrupt the history.
+        // The wrapper uses only the in-memory cache — base store is not written.
         let spy = SpyStorage(messages: makeHistory(6))
         let compressed = [user("Summary")]
         let storage = SummarizingChatStorage(wrapping: spy, summarizer: { _, _ in compressed }, triggerAt: 5, keepLast: 2)
@@ -146,8 +149,7 @@ import Testing
         _ = try await storage.fetch(userId: "u", sessionId: "s", agentId: "a", maxMessages: nil)
 
         let batches = await spy.saveMessagesBatches
-        #expect(batches.count == 1)
-        #expect(texts(batches[0]) == ["Summary"])
+        #expect(batches.count == 0)
     }
 
     @Test func subsequentFetchUsesCachedResult() async throws {
