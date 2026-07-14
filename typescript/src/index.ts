@@ -47,7 +47,10 @@ export { AgentSquad } from "./orchestrator";
 export { AgentOverlapAnalyzer, AnalysisResult } from "./agentOverlapAnalyzer";
 
 export { ConversationMessage, ParticipantRole } from "./types"
-export { AgentTools, AgentTool} from "./utils/tool"
+export { AgentTools, AgentTool, ToolResult } from "./utils/tool"
+export type { ToolFormatter } from "./agents/groundedAgent"
+export { UIPolicy } from "./utils/ui"
+export type { UIPayload, UISecurity } from "./utils/ui"
 export { isClassifierToolInput } from './utils/helpers'
 export { MCPToolProvider, MCPServerConfig } from './tools/mcpToolProvider'
 
