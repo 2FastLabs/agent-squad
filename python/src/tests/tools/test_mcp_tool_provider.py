@@ -5,31 +5,46 @@ All MCP transport and session interactions are mocked — no real server require
 
 from __future__ import annotations
 
+import json
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from types import SimpleNamespace
 
 from agent_squad.types import AgentProviderType, ConversationMessage, ParticipantRole
+from agent_squad.utils.tool import ToolResult, AgentToolCallbacks
 
 
 # ---------------------------------------------------------------------------
 # Helpers to build mock MCP objects
 # ---------------------------------------------------------------------------
 
-def _make_mcp_tool(name: str, description: str = "", properties: dict | None = None, required: list | None = None):
-    """Return a mock object shaped like an mcp Tool."""
+def _make_mcp_tool(name: str, description: str = "", properties: dict | None = None,
+                   required: list | None = None, meta: dict | None = None):
+    """Return a mock object shaped like an mcp Tool (``meta`` == the SDK's ``_meta`` alias)."""
     input_schema = {
         "type": "object",
         "properties": properties or {"query": {"type": "string", "description": "search query"}},
         "required": required or ["query"],
     }
-    return SimpleNamespace(name=name, description=description, inputSchema=input_schema)
+    return SimpleNamespace(name=name, description=description, inputSchema=input_schema, meta=meta)
 
 
-def _make_call_result(text: str, is_error: bool = False):
+def _make_call_result(text: str, is_error: bool = False, structured_content: dict | None = None,
+                      meta: dict | None = None):
     """Return a mock object shaped like an mcp CallToolResult."""
     content_item = SimpleNamespace(text=text)
-    return SimpleNamespace(isError=is_error, content=[content_item])
+    return SimpleNamespace(isError=is_error, content=[content_item],
+                           structuredContent=structured_content, meta=meta)
+
+
+def _make_read_resource_result(text: str, mime_type: str = "text/html;profile=mcp-app"):
+    """Return a mock object shaped like an mcp ReadResourceResult (text content)."""
+    return SimpleNamespace(contents=[SimpleNamespace(uri="ui://x", mimeType=mime_type, text=text)])
+
+
+def _make_read_resource_blob_result(blob_b64: str, mime_type: str = "text/html;profile=mcp-app"):
+    """Return a ReadResourceResult whose single content is a base64 blob (no text)."""
+    return SimpleNamespace(contents=[SimpleNamespace(uri="ui://x", mimeType=mime_type, blob=blob_b64)])
 
 
 def _make_list_tools_result(tools):
@@ -64,7 +79,9 @@ def mock_mcp_modules():
 
 def _build_provider(mocks, tools: list, server_type: str = "stdio"):
     """Helper that returns an MCPToolProvider pre-wired with mock internals."""
-    from agent_squad.tools.mcp_tool_provider import MCPToolProvider, MCPServerConfig
+    from agent_squad.tools.mcp_tool_provider import (
+        MCPToolProvider, MCPServerConfig, _MCPToolEntry, _meta_dict, _ui_resource_uri, _model_visible,
+    )
 
     if server_type == "stdio":
         cfg = MCPServerConfig(type="stdio", command="uvx", args=["my-server"])
@@ -73,11 +90,14 @@ def _build_provider(mocks, tools: list, server_type: str = "stdio"):
 
     provider = MCPToolProvider([cfg])
 
-    # Pre-populate the tool map so we skip the real async connect path
+    # Pre-populate the tool map so we skip the real async connect path (mirrors _ensure_connected).
     mock_session = AsyncMock()
     mock_session.call_tool = AsyncMock()
     for t in tools:
-        provider._tool_map[t.name] = (mock_session, t)
+        meta = _meta_dict(t)
+        provider._tool_map[t.name] = _MCPToolEntry(
+            session=mock_session, tool=t, ui=_ui_resource_uri(meta), model_visible=_model_visible(meta),
+        )
     provider._connected = True
 
     return provider, mock_session
@@ -462,3 +482,168 @@ def test_multiple_tools_format(mock_mcp_modules):
 
     names_openai = {r["function"]["name"] for r in openai_result}
     assert names_openai == {"tool_a", "tool_b", "tool_c"}
+
+
+# ---------------------------------------------------------------------------
+# Tool UI (widget) passthrough
+# ---------------------------------------------------------------------------
+
+def test_ui_resource_uri_helper():
+    from agent_squad.tools.mcp_tool_provider import _ui_resource_uri
+    assert _ui_resource_uri({"ui": {"resourceUri": "ui://a"}}) == "ui://a"
+    assert _ui_resource_uri({"openai/outputTemplate": "ui://b"}) == "ui://b"  # OpenAI alias
+    assert _ui_resource_uri({}) is None
+    assert _ui_resource_uri(None) is None
+
+
+def test_model_visible_helper():
+    from agent_squad.tools.mcp_tool_provider import _model_visible
+    assert _model_visible(None) is True
+    assert _model_visible({}) is True
+    assert _model_visible({"ui": {"visibility": ["model", "app"]}}) is True
+    assert _model_visible({"ui": {"visibility": ["model"]}}) is True
+    assert _model_visible({"ui": {"visibility": ["app"]}}) is False
+
+
+def test_app_only_tools_hidden_from_model_but_callable(mock_mcp_modules):
+    visible = _make_mcp_tool("get_order", "visible")
+    app_only = _make_mcp_tool("refresh_order", "app only", meta={"ui": {"visibility": ["app"]}})
+    provider, _ = _build_provider(mock_mcp_modules, [visible, app_only])
+
+    assert {r["toolSpec"]["name"] for r in provider.to_bedrock_format()} == {"get_order"}
+    assert {r["name"] for r in provider.to_claude_format()} == {"get_order"}
+    assert {r["function"]["name"] for r in provider.to_openai_format()} == {"get_order"}
+    # app-only tool is not advertised to the model but stays callable
+    assert "refresh_order" in provider._tool_map
+
+
+@pytest.mark.asyncio
+async def test_tool_handler_widget_passthrough(mock_mcp_modules):
+    tool = _make_mcp_tool("get_order", "Order status", meta={"ui": {"resourceUri": "ui://shop/order-card"}})
+    provider, mock_session = _build_provider(mock_mcp_modules, [tool])
+    mock_session.call_tool.return_value = _make_call_result(
+        "Order 42: shipped", structured_content={"status": "shipped"}, meta={"a": 1}
+    )
+    mock_session.read_resource = AsyncMock(return_value=_make_read_resource_result("<div>card</div>"))
+
+    captured: dict = {}
+
+    class _CB(AgentToolCallbacks):
+        async def on_tool_end(self, tool_name, payload_input, output, *a, **k):
+            captured["out"] = output
+
+    provider.callbacks = _CB()
+
+    bedrock_response = SimpleNamespace(
+        content=[{"toolUse": {"name": "get_order", "toolUseId": "1", "input": {"orderId": "42"}}}]
+    )
+    result = await provider.tool_handler(AgentProviderType.BEDROCK.value, bedrock_response, [])
+
+    # The model receives only the text.
+    assert result.content[0]["toolResult"]["content"][0]["text"] == "Order 42: shipped"
+    # The capture seam (what GroundedAgent reads) gets a ToolResult carrying the widget.
+    out = captured["out"]
+    assert isinstance(out, ToolResult)
+    assert out.structured_content == {"status": "shipped"}
+    assert out.ui is not None
+    assert out.ui.resource_uri == "ui://shop/order-card"
+    assert out.ui.mime_type == "text/html;profile=mcp-app"
+    assert out.ui.template == "<div>card</div>"
+    assert out.ui.structured_content == {"status": "shipped"}
+    mock_session.read_resource.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_tool_handler_no_ui_returns_plain_toolresult(mock_mcp_modules):
+    tool = _make_mcp_tool("weather", "Get weather")  # no _meta.ui
+    provider, mock_session = _build_provider(mock_mcp_modules, [tool])
+    mock_session.call_tool.return_value = _make_call_result("Sunny", structured_content={"t": 25})
+    mock_session.read_resource = AsyncMock()
+
+    captured: dict = {}
+
+    class _CB(AgentToolCallbacks):
+        async def on_tool_end(self, tool_name, payload_input, output, *a, **k):
+            captured["out"] = output
+
+    provider.callbacks = _CB()
+
+    bedrock_response = SimpleNamespace(
+        content=[{"toolUse": {"name": "weather", "toolUseId": "1", "input": {}}}]
+    )
+    await provider.tool_handler(AgentProviderType.BEDROCK.value, bedrock_response, [])
+
+    out = captured["out"]
+    assert isinstance(out, ToolResult)
+    assert out.ui is None
+    mock_session.read_resource.assert_not_called()  # no resource fetch without an advertised UI
+
+
+@pytest.mark.asyncio
+async def test_template_cache_fetches_once(mock_mcp_modules):
+    tool = _make_mcp_tool("get_order", "Order", meta={"ui": {"resourceUri": "ui://shop/order-card"}})
+    provider, mock_session = _build_provider(mock_mcp_modules, [tool])
+    mock_session.call_tool.return_value = _make_call_result("ok", structured_content={"x": 1})
+    mock_session.read_resource = AsyncMock(return_value=_make_read_resource_result("<div>card</div>"))
+
+    await provider._call_mcp_tool("get_order", {})
+    await provider._call_mcp_tool("get_order", {})
+    mock_session.read_resource.assert_called_once()  # cached after the first fetch
+
+
+@pytest.mark.asyncio
+async def test_widget_template_from_blob(mock_mcp_modules):
+    import base64
+    tool = _make_mcp_tool("get_order", "Order", meta={"ui": {"resourceUri": "ui://shop/order-card"}})
+    provider, mock_session = _build_provider(mock_mcp_modules, [tool])
+    mock_session.call_tool.return_value = _make_call_result("ok", structured_content={"x": 1})
+    blob = base64.b64encode("<div>from blob</div>".encode()).decode()
+    mock_session.read_resource = AsyncMock(return_value=_make_read_resource_blob_result(blob))
+
+    result = await provider._call_mcp_tool("get_order", {})
+    assert result.ui is not None
+    assert result.ui.template == "<div>from blob</div>"  # base64 blob decoded as UTF-8
+
+
+@pytest.mark.asyncio
+async def test_widget_fetch_failure_degrades_to_text(mock_mcp_modules):
+    tool = _make_mcp_tool("get_order", "Order", meta={"ui": {"resourceUri": "ui://shop/order-card"}})
+    provider, mock_session = _build_provider(mock_mcp_modules, [tool])
+    mock_session.call_tool.return_value = _make_call_result("Order 42: shipped", structured_content={"s": 1})
+    mock_session.read_resource = AsyncMock(side_effect=RuntimeError("resource read failed"))
+
+    result = await provider._call_mcp_tool("get_order", {})
+    # Resource fetch failed → no widget, but the grounded text and structured data still come through.
+    assert result.ui is None
+    assert result.content == "Order 42: shipped"
+    assert result.structured_content == {"s": 1}
+
+
+@pytest.mark.asyncio
+async def test_empty_content_falls_back_to_structured_json(mock_mcp_modules):
+    tool = _make_mcp_tool("stats", "Stats")
+    provider, mock_session = _build_provider(mock_mcp_modules, [tool])
+    # No text content, but structured data present.
+    mock_session.call_tool.return_value = SimpleNamespace(
+        isError=False, content=[], structuredContent={"count": 3}, meta=None
+    )
+    bedrock_response = SimpleNamespace(
+        content=[{"toolUse": {"name": "stats", "toolUseId": "1", "input": {}}}]
+    )
+    result = await provider.tool_handler(AgentProviderType.BEDROCK.value, bedrock_response, [])
+    # Model receives the JSON of structured_content rather than an empty string.
+    assert result.content[0]["toolResult"]["content"][0]["text"] == json.dumps({"count": 3}, default=str)
+
+
+@pytest.mark.asyncio
+async def test_app_only_tool_still_callable(mock_mcp_modules):
+    app_only = _make_mcp_tool("refresh_order", "app only", meta={"ui": {"visibility": ["app"]}})
+    provider, mock_session = _build_provider(mock_mcp_modules, [app_only])
+    mock_session.call_tool.return_value = _make_call_result("refreshed", structured_content={"s": 2})
+
+    # Not advertised to the model...
+    assert provider.to_bedrock_format() == []
+    # ...but the UI can still invoke it directly.
+    result = await provider._call_mcp_tool("refresh_order", {})
+    assert result.content == "refreshed"
+    assert result.structured_content == {"s": 2}
