@@ -76,7 +76,7 @@ describe("SummarizingChatStorage", () => {
 
   test("summarizer receives full history as first argument", async () => {
     let receivedHistory: ConversationMessage[] = [];
-    const capturingSummarizer = jest.fn(async (history: ConversationMessage[], keepLast: number) => {
+    const capturingSummarizer = jest.fn(async (history: ConversationMessage[], _keepLast: number) => {
       receivedHistory = history;
       return history.slice(-4);
     });
