@@ -249,7 +249,7 @@ If an MCP server advertises a UI widget on a tool — via `_meta.ui.resourceUri`
 
 Pair the provider with a [`GroundedAgent`](/agent-squad/agents/built-in/grounded-agent/) and the widget is forwarded to the caller on the streaming response, exactly like a native tool that returns a `UIPayload` — so the same MCP server that backs a ChatGPT App renders its widgets here. For a server that advertises no `_meta.ui`, the model sees the same text as before.
 
-Available in the Python and TypeScript `MCPToolProvider`. In TypeScript, consume the widget by driving the agent directly (the orchestrator's streaming accumulator forwards text only) — see the [GroundedAgent tool-UI notes](/agent-squad/agents/built-in/grounded-agent/#tool-ui-widgets).
+Available in the Python and TypeScript `MCPToolProvider`. See the [GroundedAgent tool-UI notes](/agent-squad/agents/built-in/grounded-agent/#tool-ui-widgets) for how the widget is delivered on the stream in each language.
 
 ## Configuration reference
 

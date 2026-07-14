@@ -13,6 +13,13 @@ export class AccumulatorTransform extends Transform {
     }
 
     _transform(chunk: any, encoding: string, callback: TransformCallback): void {
+      // A widget chunk is forwarded to the consumer but never folded into the accumulated text
+      // answer (which is what gets saved to storage).
+      if (chunk && typeof chunk === 'object' && chunk.ui) {
+        this.push(chunk);
+        callback();
+        return;
+      }
       const text = this.extractFromChunk(chunk);
       if (text) {
         this.accumulator += text;

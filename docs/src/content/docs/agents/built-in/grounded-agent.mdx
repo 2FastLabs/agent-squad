@@ -485,7 +485,7 @@ When the turn's primary tool returns a `UIPayload`, the `GroundedAgent` forwards
   </TabItem>
 </Tabs>
 
-In TypeScript, consume the widget by iterating the **agent's** stream directly (as above). Routing a `GroundedAgent` through `AgentSquad.routeRequest` accumulates text for the reply, and its accumulator forwards only text chunks — the `{ ui }` object chunk is dropped there. To render widgets, drive the agent directly. (Python's orchestrator forwards the widget-bearing chunk unchanged, so either path works there.)
+In TypeScript, the widget arrives as a `{ ui }` object chunk interleaved with the text-string chunks — whether you iterate the **agent's** stream directly or route through `AgentSquad.routeRequest` (the orchestrator forwards the widget chunk and keeps it out of the saved text answer). Check each chunk's type as you consume the stream. (Python delivers it the same way, as `AgentStreamResponse.ui`.)
 
 An `.app`-only tool (one the widget calls back into, but the model must never see) is kept out of what the model is offered by filtering the provider's tool list to model-visible tools — the same way the widget's Refresh button re-invokes a tool without the LLM's involvement.
 
