@@ -1,6 +1,7 @@
 import { Agent, AgentOptions } from "./agent";
 import { ConversationMessage, ParticipantRole } from "../types";
-import { AgentTool, AgentTools } from "../utils/tool";
+import { AgentTool, AgentTools, ToolResult } from "../utils/tool";
+import { UIPayload, UIPolicy } from "../utils/ui";
 
 /**
  * The 2-LLM grounded (anti-hallucination) pattern as an {@link Agent}.
@@ -10,8 +11,8 @@ import { AgentTool, AgentTools } from "../utils/tool";
  * so it cannot invent values beyond what was fetched. A chit-chat turn that calls no tools is answered
  * in one pass by the gatherer, skipping the presenter.
  *
- * Mirrors the Swift `GroundedAgent`. The tool-UI (widget) and trace-span machinery from the Swift
- * implementation has no equivalent in this tree and is intentionally omitted.
+ * When a tool returns a {@link ToolResult} carrying a UI widget, the primary tool's widget is
+ * forwarded to the caller as a `{ ui }` chunk on the streaming response, governed by `uiPolicy`.
  */
 
 /** The generic grounding instruction: present only the provided data, never invent values. */
@@ -62,8 +63,14 @@ export class DataBlockCurator implements ToolOutputCurator {
 
   /** One section. Also used as {@link PerToolCurator}'s fallback formatter. */
   static section(result: CapturedToolResult): string {
-    const body =
-      typeof result.result === "string" ? result.result : stableStringify(result.result);
+    let value = result.result;
+    if (value instanceof ToolResult) {
+      // Curate from the render-only structured data (the facts), not the widget wrapper. `{}` is
+      // truthy in JS, so check emptiness explicitly rather than `structuredContent || content`.
+      const sc = value.structuredContent;
+      value = sc && typeof sc === "object" && Object.keys(sc).length ? sc : value.content;
+    }
+    const body = typeof value === "string" ? value : stableStringify(value);
     return `### ${result.name}\n${body}`;
   }
 }
@@ -119,6 +126,12 @@ export const Grounding = {
     return results.length ? results[results.length - 1] : undefined;
   },
 
+  /** The widget advertised by the primary tool, if it returned one. */
+  primaryUi(results: CapturedToolResult[]): UIPayload | undefined {
+    const primary = Grounding.primary(results);
+    return primary && primary.result instanceof ToolResult ? primary.result.ui : undefined;
+  },
+
   /**
    * The presenter's user message: question and curated data, tagged so the model can tell them
    * apart.
@@ -146,6 +159,8 @@ export interface GroundedAgentOptions extends AgentOptions {
   curator?: ToolOutputCurator;
   /** Per-tool presenter system prompts. Default: a generic grounding prompt. */
   presenterPrompt?: PresenterPrompt;
+  /** Whether a tool-advertised widget is forwarded to the caller (streaming path only). Default: forward. */
+  uiPolicy?: UIPolicy;
 }
 
 /**
@@ -158,6 +173,7 @@ export class GroundedAgent extends Agent {
   private readonly tools: AgentTools;
   private readonly curator: ToolOutputCurator;
   private readonly presenterPrompt: PresenterPrompt;
+  private readonly uiPolicy: UIPolicy;
 
   constructor(options: GroundedAgentOptions) {
     super(options);
@@ -172,6 +188,7 @@ export class GroundedAgent extends Agent {
     this.tools = options.tools;
     this.curator = options.curator ?? new DataBlockCurator();
     this.presenterPrompt = options.presenterPrompt ?? PresenterPrompt.default();
+    this.uiPolicy = options.uiPolicy ?? UIPolicy.FORWARD;
   }
 
   async processRequest(
@@ -211,13 +228,24 @@ export class GroundedAgent extends Agent {
       );
     }
     const presenterInput = Grounding.presenterMessage(inputText, feed);
-    return this.presenter.processRequest(
+    const presenterResponse = await this.presenter.processRequest(
       presenterInput,
       userId,
       sessionId,
       chatHistory,
       additionalParams
     );
+
+    // Forward the primary tool's widget (if any) as a leading `{ ui }` chunk, then the presenter's
+    // text. Streaming path only — a non-streaming presenter returns a message with no widget channel.
+    const widget = this.uiPolicy === UIPolicy.FORWARD ? Grounding.primaryUi(captured) : undefined;
+    if (widget && GroundedAgent.isAsyncIterable(presenterResponse)) {
+      return (async function* () {
+        yield { ui: widget };
+        yield* presenterResponse as AsyncIterable<any>;
+      })();
+    }
+    return presenterResponse;
   }
 
   /**

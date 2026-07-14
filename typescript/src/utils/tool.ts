@@ -1,10 +1,24 @@
-/**
- * Represents the result of a tool execution
- */
+import { UIPayload } from "./ui";
+
+// Internal wire wrapper (toolUseId + text) that formats a result for the model. Not the same as the
+// public `ToolResult` below, which is what a tool returns.
 export class AgentToolResult {
   constructor(
     public toolUseId: string,
     public content: any
+  ) {}
+}
+
+/**
+ * A tool return that carries render-only data and/or a UI widget. Only `content` (text) is added to
+ * the model's context; `structuredContent` and `ui` never reach the model. Tools that need none of
+ * this can still just return a string.
+ */
+export class ToolResult {
+  constructor(
+    public content: string = "",
+    public structuredContent: any = {},
+    public ui?: UIPayload
   ) {}
 }
 
@@ -192,7 +206,13 @@ export class AgentTools {
       const toolId = getToolId(toolUseBlock);
       const inputData = getInputData(toolUseBlock);
       const result = await this.processTool(toolName, inputData);
-      const toolResult = new AgentToolResult(toolId, result);
+      // A ToolResult carries render-only data/UI; only its text goes to the model. Empty text falls
+      // back to the structured data so the model isn't blind. Plain returns pass through unchanged.
+      const modelContent =
+        result instanceof ToolResult
+          ? result.content || JSON.stringify(result.structuredContent)
+          : result;
+      const toolResult = new AgentToolResult(toolId, modelContent);
       toolResults.push(toolResult);
     }
 

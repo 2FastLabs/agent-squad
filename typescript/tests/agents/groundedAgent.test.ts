@@ -10,7 +10,8 @@ import {
   CapturedToolResult,
 } from "../../src/agents/groundedAgent";
 import { ConversationMessage, ParticipantRole } from "../../src/types";
-import { AgentTool, AgentTools } from "../../src/utils/tool";
+import { AgentTool, AgentTools, ToolResult } from "../../src/utils/tool";
+import { UIPolicy, UIPayload } from "../../src/utils/ui";
 
 interface ToolCall {
   name: string;
@@ -256,6 +257,107 @@ describe("GroundedAgent", () => {
     const result = await agent.processRequest("hi", "u", "s", []);
     expect(await toText(result)).toBe("just chatting");
     expect(presenter.called).toBe(false);
+  });
+
+  // --- Tool UI (widget) forwarding ---
+
+  const uiToolResult = () => {
+    const payload: UIPayload = {
+      resourceUri: "ui://shop/order-card",
+      mimeType: "text/html;profile=mcp-app",
+      template: "<div>card</div>",
+      structuredContent: { status: "shipped" },
+    };
+    return new ToolResult("Order: shipped", { status: "shipped" }, payload);
+  };
+
+  it("forwards the primary tool's widget before the presenter text on a tool turn", async () => {
+    const tools = makeTools();
+    const gatherer = new FakeGatherer(
+      { name: "g", description: "" },
+      tools,
+      [{ name: "search_products", args: {} }],
+      "",
+      true
+    );
+    (tools.tools[0] as any).func = () => uiToolResult();
+    const presenter = new FakePresenter({ name: "p", description: "" }, "Your order shipped.", true);
+    const agent = build(gatherer, presenter, tools);
+
+    const result = await agent.processRequest("order?", "u", "s", []);
+    const chunks: any[] = [];
+    for await (const chunk of result as AsyncIterable<any>) chunks.push(chunk);
+
+    expect(chunks[0].ui.resourceUri).toBe("ui://shop/order-card");
+    expect(chunks[chunks.length - 1]).toBe("Your order shipped.");
+    // The presenter is fed the structured facts, not the widget wrapper.
+    expect(presenter.receivedInput).toContain('"status": "shipped"');
+  });
+
+  it("emits no widget when uiPolicy is SUPPRESS", async () => {
+    const tools = makeTools();
+    const gatherer = new FakeGatherer(
+      { name: "g", description: "" },
+      tools,
+      [{ name: "search_products", args: {} }],
+      "",
+      true
+    );
+    (tools.tools[0] as any).func = () => uiToolResult();
+    const presenter = new FakePresenter({ name: "p", description: "" }, "text only", true);
+    const agent = build(gatherer, presenter, tools, { uiPolicy: UIPolicy.SUPPRESS });
+
+    const result = await agent.processRequest("q", "u", "s", []);
+    const chunks: any[] = [];
+    for await (const chunk of result as AsyncIterable<any>) chunks.push(chunk);
+    expect(chunks.some((c) => c && typeof c === "object" && c.ui)).toBe(false);
+    expect(chunks.join("")).toBe("text only");
+  });
+
+  it("curates a ToolResult from its structuredContent", () => {
+    const out = new DataBlockCurator().curate([
+      { name: "get_product", result: new ToolResult("ignored text", { price: 90 }) },
+    ]);
+    expect(out).toContain("### get_product");
+    expect(out).toContain('"price": 90');
+    expect(out).not.toContain("ignored text");
+  });
+
+  it("curates from content when a ToolResult has empty structuredContent", () => {
+    // `{}` is truthy in JS — verifies the explicit-emptiness check, not a naive `sc || content`.
+    const out = new DataBlockCurator().curate([{ name: "t", result: new ToolResult("plain text") }]);
+    expect(out).toBe("### t\nplain text");
+  });
+
+  it("returns a plain message with no widget for a non-streaming presenter", async () => {
+    const tools = makeTools();
+    const gatherer = new FakeGatherer(
+      { name: "g", description: "" },
+      tools,
+      [{ name: "search_products", args: {} }]
+    );
+    (tools.tools[0] as any).func = () => uiToolResult();
+    const presenter = new FakePresenter({ name: "p", description: "" }, "Your order shipped.");
+    const agent = build(gatherer, presenter, tools);
+
+    const result = await agent.processRequest("order?", "u", "s", []);
+    // Non-streaming: a ConversationMessage (not a stream), and no widget channel.
+    expect(typeof (result as any)[Symbol.asyncIterator]).toBe("undefined");
+    expect((result as ConversationMessage).content?.[0].text).toBe("Your order shipped.");
+  });
+
+  it("Grounding.primaryUi returns the primary tool's widget", () => {
+    const tr = uiToolResult();
+    expect(Grounding.primaryUi([{ name: "get_order", result: tr }])?.resourceUri).toBe(
+      "ui://shop/order-card"
+    );
+    expect(
+      Grounding.primaryUi([
+        { name: "a", result: tr },
+        { name: "b", result: "plain" },
+      ])
+    ).toBeUndefined();
+    expect(Grounding.primaryUi([])).toBeUndefined();
   });
 
   // --- Construction guards ---

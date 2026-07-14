@@ -8,7 +8,7 @@ The `GroundedAgent` is the framework's answer to LLM hallucination in tool-drive
 A chit-chat turn that calls no tools skips the presenter entirely: the gatherer answers directly in one pass.
 
 :::note
-Tool-UI widgets are supported in Swift and Python — a tool can return a component that the `GroundedAgent` forwards to the caller (see [Tool UI](#tool-ui-widgets) below). TypeScript support is not yet available. Per-phase trace spans remain Swift-only.
+Tool-UI widgets are supported in Swift, Python, and TypeScript — a tool can return a component that the `GroundedAgent` forwards to the caller (see [Tool UI](#tool-ui-widgets) below). Per-phase trace spans remain Swift-only.
 :::
 
 ## How it works
@@ -390,58 +390,102 @@ When the gatherer makes no tool calls, the `GroundedAgent` emits the gatherer's 
 
 <span id="tool-ui-widgets"></span>
 
-*Python only for now; TypeScript support is not yet available.*
-
 A tool can return an interactive UI component (an "MCP App" widget) alongside its text. Instead of a plain string, the tool returns a `ToolResult`:
 
 - `content` — the text added to the model's context (what the gatherer reads).
-- `structured_content` — the data the widget renders from. **Render-only**: never added to the model's context, so the model cannot hallucinate from it. The curator also feeds the presenter from this.
-- `ui` — a `UIPayload`: the self-contained component (its `resource_uri`, `mime_type`, `template`, render-only `structured_content`, and a `UISecurity` policy the host turns into a CSP).
+- `structuredContent` / `structured_content` — the data the widget renders from. **Render-only**: never added to the model's context, so the model cannot hallucinate from it. The curator also feeds the presenter from this.
+- `ui` — a `UIPayload`: the self-contained component (its resource URI, MIME type, template, render-only structured content, and a `UISecurity` policy the host turns into a CSP).
 
-When the turn's primary tool returns a `UIPayload`, the `GroundedAgent` forwards it to the caller on the **streaming path** as the `ui` field of an `AgentStreamResponse`, emitted before the presenter's text streams in. This is governed by `ui_policy` (`UIPolicy.FORWARD`, the default, or `UIPolicy.SUPPRESS` to drop the widget and keep the grounded text only). Drawing the widget is the host's job — the framework only carries the data.
+When the turn's primary tool returns a `UIPayload`, the `GroundedAgent` forwards it to the caller on the **streaming path**, before the presenter's text streams in — in Python as the `ui` field of an `AgentStreamResponse`, in TypeScript as a `{ ui }` chunk at the head of the stream (TS streams carry strings, so the widget rides as its own object chunk). Governed by `uiPolicy` / `ui_policy` (`FORWARD` by default, or `SUPPRESS` to drop the widget and keep the grounded text only). Drawing the widget is the host's job — the framework only carries the data.
 
-```python
-from agent_squad.utils import AgentTool, AgentTools, ToolResult, UIPayload, UISecurity, UIPolicy
-from agent_squad.agents import GroundedAgent, GroundedAgentOptions
+<Tabs syncKey="runtime">
+  <TabItem label="TypeScript" icon="seti:typescript" color="blue">
+    ```typescript
+    import {
+      GroundedAgent, AgentTool, AgentTools, ToolResult, UIPolicy,
+    } from 'agent-squad';
 
-def get_order(order_id: str) -> ToolResult:
-    """Look up an order's status and delivery estimate.
+    const getOrder = (input: { orderId: string }): ToolResult => {
+      const data = { orderId: input.orderId, status: 'In transit', eta: '2026-07-02' };
+      return new ToolResult(
+        `Order ${input.orderId}: ${data.status}, ETA ${data.eta}.`, // text → the gatherer's context
+        data,                                                       // render-only → widget + presenter feed
+        {
+          resourceUri: 'ui://shop/order-card',
+          mimeType: 'text/html;profile=mcp-app',
+          template: "<div class='card'>…render from window.WIDGET_DATA…</div>",
+          structuredContent: data,
+          security: { resourceDomains: ['https://cdn.myshop.com'], prefersBorder: true },
+        },
+      );
+    };
 
-    :param order_id: the order id
-    """
-    data = {"order_id": order_id, "status": "In transit", "eta": "2026-07-02"}
-    return ToolResult(
-        # text → the gatherer's context (so it can reason / follow up)
-        content=f"Order {order_id}: {data['status']}, ETA {data['eta']}.",
-        # render-only → hydrates the widget and the presenter feed, never the model
-        structured_content=data,
-        ui=UIPayload(
-            resource_uri="ui://shop/order-card",
-            mime_type="text/html;profile=mcp-app",
-            template="<div class='card'>…render from window.WIDGET_DATA…</div>",
+    const tools = new AgentTools([new AgentTool({ name: 'get_order', func: getOrder })]);
+
+    const shop = new GroundedAgent({
+      name: 'Shop',
+      description: 'Orders, grounded in real data.',
+      gatherer,                    // built above, with tools
+      presenter,
+      tools,
+      uiPolicy: UIPolicy.FORWARD,  // default; use SUPPRESS for text-only
+    });
+
+    // The widget arrives as a { ui } chunk ahead of the presenter's text chunks:
+    const stream = await shop.processRequest('where is my order #1234?', userId, sessionId, []);
+    for await (const chunk of stream as AsyncIterable<any>) {
+      if (chunk?.ui) renderWidget(chunk.ui);                    // your host renders the component
+      else if (typeof chunk === 'string') process.stdout.write(chunk); // grounded text underneath
+    }
+    ```
+  </TabItem>
+  <TabItem label="Python" icon="seti:python">
+    ```python
+    from agent_squad.utils import AgentTool, AgentTools, ToolResult, UIPayload, UISecurity, UIPolicy
+    from agent_squad.agents import GroundedAgent, GroundedAgentOptions
+
+    def get_order(order_id: str) -> ToolResult:
+        """Look up an order's status and delivery estimate.
+
+        :param order_id: the order id
+        """
+        data = {"order_id": order_id, "status": "In transit", "eta": "2026-07-02"}
+        return ToolResult(
+            # text → the gatherer's context (so it can reason / follow up)
+            content=f"Order {order_id}: {data['status']}, ETA {data['eta']}.",
+            # render-only → hydrates the widget and the presenter feed, never the model
             structured_content=data,
-            security=UISecurity(resource_domains=["https://cdn.myshop.com"], prefers_border=True),
-        ),
-    )
+            ui=UIPayload(
+                resource_uri="ui://shop/order-card",
+                mime_type="text/html;profile=mcp-app",
+                template="<div class='card'>…render from window.WIDGET_DATA…</div>",
+                structured_content=data,
+                security=UISecurity(resource_domains=["https://cdn.myshop.com"], prefers_border=True),
+            ),
+        )
 
-tools = AgentTools([AgentTool(name="get_order", func=get_order, required=["order_id"])])
+    tools = AgentTools([AgentTool(name="get_order", func=get_order, required=["order_id"])])
 
-shop = GroundedAgent(GroundedAgentOptions(
-    name="Shop",
-    description="Orders, grounded in real data.",
-    gatherer=gatherer,          # built as above, with tools=tools
-    presenter=presenter,
-    tools=tools,
-    ui_policy=UIPolicy.FORWARD,  # default; use SUPPRESS for text-only
-))
+    shop = GroundedAgent(GroundedAgentOptions(
+        name="Shop",
+        description="Orders, grounded in real data.",
+        gatherer=gatherer,          # built as above, with tools=tools
+        presenter=presenter,
+        tools=tools,
+        ui_policy=UIPolicy.FORWARD,  # default; use SUPPRESS for text-only
+    ))
 
-# Consume the widget on the stream:
-async for chunk in await shop.process_request("where is my order #1234?", user_id, session_id, []):
-    if chunk.ui is not None:
-        render_widget(chunk.ui)          # your host renders the component
-    elif chunk.text:
-        print(chunk.text, end="")        # the grounded sentence streams underneath
-```
+    # Consume the widget on the stream:
+    async for chunk in await shop.process_request("where is my order #1234?", user_id, session_id, []):
+        if chunk.ui is not None:
+            render_widget(chunk.ui)          # your host renders the component
+        elif chunk.text:
+            print(chunk.text, end="")        # the grounded sentence streams underneath
+    ```
+  </TabItem>
+</Tabs>
+
+In TypeScript, consume the widget by iterating the **agent's** stream directly (as above). Routing a `GroundedAgent` through `AgentSquad.routeRequest` accumulates text for the reply, and its accumulator forwards only text chunks — the `{ ui }` object chunk is dropped there. To render widgets, drive the agent directly. (Python's orchestrator forwards the widget-bearing chunk unchanged, so either path works there.)
 
 An `.app`-only tool (one the widget calls back into, but the model must never see) is kept out of what the model is offered by filtering the provider's tool list to model-visible tools — the same way the widget's Refresh button re-invokes a tool without the LLM's involvement.
 
