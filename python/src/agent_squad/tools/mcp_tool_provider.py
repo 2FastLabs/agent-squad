@@ -29,6 +29,9 @@ Requires the ``mcp`` extra::
 
 from __future__ import annotations
 
+import base64
+import json
+
 try:
     from mcp import ClientSession
     from mcp.client.stdio import stdio_client, StdioServerParameters
@@ -39,11 +42,14 @@ except ImportError as exc:
         "Install it with: pip install agent-squad[mcp]"
     ) from exc
 
+from pydantic import AnyUrl  # mcp depends on pydantic, so it's available whenever the import above succeeds
+
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from agent_squad.types import AgentProviderType, ConversationMessage, ParticipantRole
-from agent_squad.utils.tool import AgentTools, AgentToolCallbacks
+from agent_squad.utils.tool import AgentTools, AgentToolCallbacks, ToolResult
+from agent_squad.utils.ui import UIPayload
 
 
 @dataclass
@@ -68,6 +74,48 @@ class MCPServerConfig:
     env: Optional[dict[str, str]] = None
     url: Optional[str] = None
     headers: Optional[dict[str, str]] = None
+
+
+def _meta_dict(mcp_tool: Any) -> Optional[dict[str, Any]]:
+    """The tool's ``_meta`` (MCP Apps UI metadata); the SDK exposes it as ``.meta``."""
+    return getattr(mcp_tool, "meta", None) or getattr(mcp_tool, "_meta", None)
+
+
+def _ui_resource_uri(meta: Optional[dict[str, Any]]) -> Optional[str]:
+    """The advertised UI template URI: ``_meta.ui.resourceUri``, or the OpenAI
+    ``openai/outputTemplate`` alias. Tolerant of absent/wrong-typed fields."""
+    if not isinstance(meta, dict):
+        return None
+    ui = meta.get("ui")
+    if isinstance(ui, dict) and isinstance(ui.get("resourceUri"), str):
+        return ui["resourceUri"]
+    alias = meta.get("openai/outputTemplate")
+    return alias if isinstance(alias, str) else None
+
+
+def _model_visible(meta: Optional[dict[str, Any]]) -> bool:
+    """Whether the model may be offered the tool. ``_meta.ui.visibility`` lists audiences
+    (``model`` / ``app``); absent means both (the MCP default)."""
+    if not isinstance(meta, dict):
+        return True
+    ui = meta.get("ui")
+    if not isinstance(ui, dict):
+        return True
+    visibility = ui.get("visibility")
+    if not isinstance(visibility, list):
+        return True
+    return "model" in visibility
+
+
+@dataclass
+class _MCPToolEntry:
+    """Per-tool state: owning session, the raw MCP tool, its advertised UI resource URI (if any),
+    and whether the model may see it (app-only tools stay callable but unadvertised)."""
+
+    session: Any
+    tool: Any
+    ui: Optional[str] = None
+    model_visible: bool = True
 
 
 class MCPToolProvider(AgentTools):
@@ -102,8 +150,11 @@ class MCPToolProvider(AgentTools):
         super().__init__(tools=[], callbacks=callbacks)
 
         self._servers = servers
-        # Maps tool_name → (ClientSession, mcp_tool)
-        self._tool_map: dict[str, tuple[Any, Any]] = {}
+        # Maps tool_name → _MCPToolEntry
+        self._tool_map: dict[str, _MCPToolEntry] = {}
+        # Caches fetched UI templates: (session id, resourceUri) → (mime_type, body).
+        # Keyed by session too, so two servers advertising the same URI can't collide.
+        self._template_cache: dict[tuple[int, str], tuple[str, str]] = {}
         self._connected = False
         # Keep hold of context-manager stacks so we can exit them on disconnect
         self._cm_stack: list[Any] = []
@@ -172,7 +223,13 @@ class MCPToolProvider(AgentTools):
 
             tools_result = await session.list_tools()
             for mcp_tool in tools_result.tools:
-                self._tool_map[mcp_tool.name] = (session, mcp_tool)
+                meta = _meta_dict(mcp_tool)
+                self._tool_map[mcp_tool.name] = _MCPToolEntry(
+                    session=session,
+                    tool=mcp_tool,
+                    ui=_ui_resource_uri(meta),
+                    model_visible=_model_visible(meta),
+                )
 
         self._connected = True
 
@@ -197,6 +254,7 @@ class MCPToolProvider(AgentTools):
         self._cm_stack = []
 
         self._tool_map = {}
+        self._template_cache = {}
         self._connected = False
 
     # ------------------------------------------------------------------
@@ -246,12 +304,16 @@ class MCPToolProvider(AgentTools):
                 tool_name, input_data, result, metadata={"agent_info": agent_info}
             )
 
+            # Only the text reaches the model; the structured data + widget ride on the ToolResult
+            # for a UI-aware consumer (e.g. GroundedAgent), captured via on_tool_end above.
+            model_text = result.content or json.dumps(result.structured_content, default=str)
+
             if provider_type == AgentProviderType.BEDROCK.value:
                 tool_results.append(
                     {
                         "toolResult": {
                             "toolUseId": tool_id,
-                            "content": [{"text": result}],
+                            "content": [{"text": model_text}],
                         }
                     }
                 )
@@ -260,7 +322,7 @@ class MCPToolProvider(AgentTools):
                     {
                         "type": "tool_result",
                         "tool_use_id": tool_id,
-                        "content": result,
+                        "content": model_text,
                     }
                 )
 
@@ -270,31 +332,76 @@ class MCPToolProvider(AgentTools):
             )
         return {"role": ParticipantRole.USER.value, "content": tool_results}
 
-    async def _call_mcp_tool(self, tool_name: str, input_data: dict) -> str:
-        """Call a tool on the appropriate MCP server and return a string result."""
-        if tool_name not in self._tool_map:
-            return f"Tool '{tool_name}' not found in any connected MCP server"
+    async def _call_mcp_tool(self, tool_name: str, input_data: dict) -> ToolResult:
+        """Call a tool on the appropriate MCP server.
 
-        session, _ = self._tool_map[tool_name]
+        Returns a :class:`~agent_squad.utils.tool.ToolResult` carrying the text (added to the model's
+        context), the render-only ``structured_content``, and a ``UIPayload`` widget when the tool
+        advertised one via its ``_meta.ui`` (fetched from the server as a resource)."""
+        entry = self._tool_map.get(tool_name)
+        if entry is None:
+            return ToolResult(content=f"Tool '{tool_name}' not found in any connected MCP server")
+
         try:
-            call_result = await session.call_tool(tool_name, input_data)
+            call_result = await entry.session.call_tool(tool_name, input_data)
         except Exception as exc:  # noqa: BLE001
-            return f"Error calling tool '{tool_name}': {exc}"
+            return ToolResult(content=f"Error calling tool '{tool_name}': {exc}")
 
-        if getattr(call_result, "isError", False):
-            # Surface the error text back to the model so it can react
-            parts = [
-                getattr(item, "text", str(item))
-                for item in (call_result.content or [])
-            ]
-            return f"Tool error: {' '.join(parts)}" if parts else "Tool returned an error"
-
-        # Collect text content from the result
         parts = [
             getattr(item, "text", str(item))
-            for item in (call_result.content or [])
+            for item in (getattr(call_result, "content", None) or [])
         ]
-        return "\n".join(parts) if parts else ""
+        text = "\n".join(parts)
+
+        if getattr(call_result, "isError", False):
+            # Surface the error text back to the model so it can react.
+            return ToolResult(content=f"Tool error: {text}" if text else "Tool returned an error")
+
+        structured = getattr(call_result, "structuredContent", None) or {}
+
+        ui: Optional[UIPayload] = None
+        if entry.ui:
+            template = await self._template_for(entry.session, entry.ui)
+            if template is not None:
+                mime_type, body = template
+                ui = UIPayload(
+                    resource_uri=entry.ui,
+                    mime_type=mime_type,
+                    template=body,
+                    structured_content=structured,
+                    meta=getattr(call_result, "meta", None),
+                )
+
+        return ToolResult(content=text, structured_content=structured, ui=ui)
+
+    async def _template_for(self, session: Any, resource_uri: str) -> Optional[tuple[str, str]]:
+        """Fetch (and cache) a UI template resource by URI. Returns ``(mime_type, body)`` or ``None``.
+
+        A resource arrives as text or as a base64 ``blob``; the blob is decoded as UTF-8 markup."""
+        cache_key = (id(session), resource_uri)
+        if cache_key in self._template_cache:
+            return self._template_cache[cache_key]
+        try:
+            read_result = await session.read_resource(AnyUrl(resource_uri))
+        except Exception:  # noqa: BLE001
+            return None
+        contents = getattr(read_result, "contents", None) or []
+        if not contents:
+            return None
+        first = contents[0]
+        mime_type = getattr(first, "mimeType", None) or "text/html;profile=mcp-app"
+        body = getattr(first, "text", None)
+        if body is None:
+            blob = getattr(first, "blob", None)
+            if isinstance(blob, str):
+                try:
+                    body = base64.b64decode(blob).decode("utf-8")
+                except Exception:  # noqa: BLE001
+                    body = None
+        if body is None:
+            return None
+        self._template_cache[cache_key] = (mime_type, body)
+        return (mime_type, body)
 
     # ------------------------------------------------------------------
     # Format conversion helpers
@@ -310,7 +417,10 @@ class MCPToolProvider(AgentTools):
             connect lazily via :meth:`tool_handler`.
         """
         result = []
-        for tool_name, (_session, mcp_tool) in self._tool_map.items():
+        for tool_name, entry in self._tool_map.items():
+            if not entry.model_visible:
+                continue  # app-only tool: callable by the UI, never advertised to the model
+            mcp_tool = entry.tool
             input_schema = (
                 mcp_tool.inputSchema
                 if isinstance(mcp_tool.inputSchema, dict)
@@ -330,7 +440,10 @@ class MCPToolProvider(AgentTools):
     def to_claude_format(self) -> list[dict[str, Any]]:
         """Return MCP tools in the Anthropic / Claude ``input_schema`` format."""
         result = []
-        for tool_name, (_session, mcp_tool) in self._tool_map.items():
+        for tool_name, entry in self._tool_map.items():
+            if not entry.model_visible:
+                continue  # app-only tool: callable by the UI, never advertised to the model
+            mcp_tool = entry.tool
             input_schema = (
                 mcp_tool.inputSchema
                 if isinstance(mcp_tool.inputSchema, dict)
@@ -352,7 +465,10 @@ class MCPToolProvider(AgentTools):
     def to_openai_format(self) -> list[dict[str, Any]]:
         """Return MCP tools in the OpenAI function-calling format."""
         result = []
-        for tool_name, (_session, mcp_tool) in self._tool_map.items():
+        for tool_name, entry in self._tool_map.items():
+            if not entry.model_visible:
+                continue  # app-only tool: callable by the UI, never advertised to the model
+            mcp_tool = entry.tool
             input_schema = (
                 mcp_tool.inputSchema
                 if isinstance(mcp_tool.inputSchema, dict)

@@ -243,6 +243,16 @@ openai_agent = OpenAIAgent(OpenAIAgentOptions(
   </TabItem>
 </Tabs>
 
+## Tool UI (widgets)
+
+If an MCP server advertises a UI widget on a tool — via `_meta.ui.resourceUri` (or the OpenAI `openai/outputTemplate` alias), the same "MCP Apps" contract ChatGPT Apps use — `MCPToolProvider` surfaces it instead of flattening the result to text. On a call it reads the result's `structuredContent`, fetches the advertised UI resource (`resources/read`, cached), and returns a [`ToolResult`](/agent-squad/agents/built-in/grounded-agent/#tool-ui-widgets) carrying a `UIPayload` (its `resource_uri`, `mime_type`, `template`, render-only `structured_content`, and `meta`). Tools whose `_meta.ui.visibility` excludes `model` stay callable but are never advertised to the LLM.
+
+Pair the provider with a [`GroundedAgent`](/agent-squad/agents/built-in/grounded-agent/) and the widget is forwarded to the caller on the streaming response, exactly like a native tool that returns a `UIPayload` — so the same MCP server that backs a ChatGPT App renders its widgets here. For a server that advertises no `_meta.ui`, the model sees the same text as before.
+
+:::note
+Tool-UI passthrough is available in the Python `MCPToolProvider` today; TypeScript support is in progress. (Native tools that return a `ToolResult` with a widget already work in both languages.)
+:::
+
 ## Configuration reference
 
 ### MCPServerConfig
