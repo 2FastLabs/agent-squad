@@ -49,7 +49,7 @@ import Testing
 
         func saveMessages(_ messages: [ConversationMessage], userId: String, sessionId: String, agentId: String, maxMessages: Int?) async throws {
             saveMessagesBatches.append(messages)
-            storedMessages = messages
+            storedMessages.append(contentsOf: messages)
         }
 
         func fetchAllChats(userId: String, sessionId: String) async throws -> [ConversationMessage] {
@@ -139,9 +139,9 @@ import Testing
     }
 
     @Test func noWriteBackToBaseStoreAfterSummarization() async throws {
-        // saveMessages in all bundled stores appends rather than replaces, so
+        // All bundled stores use append semantics in saveMessages, not replace —
         // writing back the compressed result would corrupt the history.
-        // The wrapper uses only the in-memory cache — base store is not written.
+        // The wrapper uses only the in-memory buffer; base store is never written.
         let spy = SpyStorage(messages: makeHistory(6))
         let compressed = [user("Summary")]
         let storage = SummarizingChatStorage(wrapping: spy, summarizer: { _, _ in compressed }, triggerAt: 5, keepLast: 2)
@@ -163,10 +163,10 @@ import Testing
         _ = try await storage.fetch(userId: "u", sessionId: "s", agentId: "a", maxMessages: nil)
         _ = try await storage.fetch(userId: "u", sessionId: "s", agentId: "a", maxMessages: nil)
 
-        // Summarizer called only once — second fetch hits the internal cache.
+        // Summarizer called only once; second fetch hits the in-memory buffer.
         #expect(await callCount.value == 1)
-        let fetchCount = await spy.fetchCallCount
-        #expect(fetchCount == 1)
+        // Base store fetched only once; second fetch never reaches it.
+        #expect(await spy.fetchCallCount == 1)
     }
 
     @Test func fetchAllChatsNeverIntercepted() async throws {
@@ -183,7 +183,9 @@ import Testing
         #expect(result.count == 12)
     }
 
-    @Test func saveDelegatesToBase() async throws {
+    @Test func saveBeforeBufferActiveAlwaysDelegatesToBase() async throws {
+        // Buffer is only activated on a qualifying fetch. A save that arrives
+        // before then is a pure delegation — raw message goes to inner store only.
         let spy = SpyStorage()
         let storage = SummarizingChatStorage(wrapping: spy, summarizer: { h, _ in h }, triggerAt: 5, keepLast: 2)
 
@@ -193,39 +195,72 @@ import Testing
         #expect(texts(stored) == ["Hello"])
     }
 
-    @Test func saveMessagesDelegatesToBase() async throws {
-        let spy = SpyStorage()
-        let storage = SummarizingChatStorage(wrapping: spy, summarizer: { h, _ in h }, triggerAt: 5, keepLast: 2)
+    @Test func saveAfterBufferActiveAppendsToBuffer() async throws {
+        // After buffer is activated by a qualifying fetch, each save appends
+        // to the in-memory buffer so the next fetch returns the updated view.
+        let spy = SpyStorage(messages: makeHistory(6)) // 12 > 10 — activates buffer on fetch
+        let storage = SummarizingChatStorage(wrapping: spy, summarizer: { _, keepLast in
+            // Return a single summary message so the buffer starts small.
+            [ConversationMessage(role: .user, text: "Summary")]
+        }, triggerAt: 5, keepLast: 2)
 
-        try await storage.saveMessages([user("A"), assistant("B")], userId: "u", sessionId: "s", agentId: "a", maxMessages: nil)
+        // Activate the buffer.
+        _ = try await storage.fetch(userId: "u", sessionId: "s", agentId: "a", maxMessages: nil)
 
-        let batches = await spy.saveMessagesBatches
-        #expect(batches.count == 1)
-        #expect(texts(batches[0]) == ["A", "B"])
+        // Save a new message.
+        try await storage.save(user("New message"), userId: "u", sessionId: "s", agentId: "a", maxMessages: nil)
+
+        // Fetch from buffer — must contain the saved message.
+        let result = try await storage.fetch(userId: "u", sessionId: "s", agentId: "a", maxMessages: nil)
+        #expect(texts(result) == ["Summary", "New message"])
+
+        // Base store was fetched only once (activation) — second fetch was served from buffer.
+        #expect(await spy.fetchCallCount == 1)
     }
 
-    @Test func saveInvalidatesCacheSoNextFetchHitsBaseStore() async throws {
-        let spy = SpyStorage(messages: makeHistory(6))
+    @Test func saveTriggersCompressionWhenBufferExceedsThreshold() async throws {
+        // After buffer activation, saves that push the buffer above the threshold
+        // cause the summarizer to run immediately — so the next fetch is always fast.
+        let spy = SpyStorage(messages: makeHistory(6)) // 12 > 10 — activates buffer on fetch
         let callCount = Counter()
         let storage = SummarizingChatStorage(wrapping: spy, summarizer: { _, _ in
             await callCount.increment()
-            return [ConversationMessage(role: .user, text: "Summary")]
+            return [ConversationMessage(role: .user, text: "Compressed \(await callCount.value)")]
         }, triggerAt: 5, keepLast: 2)
 
-        // First fetch: triggers summarization, caches result. spy.fetch called once.
+        // Activate buffer with first summarization (callCount → 1).
         _ = try await storage.fetch(userId: "u", sessionId: "s", agentId: "a", maxMessages: nil)
-        #expect(await spy.fetchCallCount == 1)
+        #expect(await callCount.value == 1)
 
-        // Second fetch: served from cache — spy.fetch NOT called again.
+        // Add enough messages to push the buffer over the threshold again (> 10 messages).
+        // Buffer starts at 1 (summary); we need 10 more to exceed triggerAt * 2 = 10.
+        for i in 0..<10 {
+            try await storage.save(user("Extra \(i)"), userId: "u", sessionId: "s", agentId: "a", maxMessages: nil)
+        }
+
+        // Summarizer should have been called again by save (callCount → 2).
+        #expect(await callCount.value == 2)
+    }
+
+    @Test func baseStorageAlwaysReceivesRawMessages() async throws {
+        // Even after the buffer is active, every save still reaches the inner store
+        // so raw history is available for analytics / audit via fetchAllChats.
+        let spy = SpyStorage(messages: makeHistory(6))
+        let storage = SummarizingChatStorage(wrapping: spy, summarizer: { _, _ in
+            [ConversationMessage(role: .user, text: "Summary")]
+        }, triggerAt: 5, keepLast: 2)
+
+        // Activate buffer.
         _ = try await storage.fetch(userId: "u", sessionId: "s", agentId: "a", maxMessages: nil)
-        #expect(await spy.fetchCallCount == 1)
 
-        // A save invalidates the cache.
-        try await storage.save(user("New message"), userId: "u", sessionId: "s", agentId: "a", maxMessages: nil)
+        // Save raw messages after activation.
+        try await storage.save(user("Raw A"), userId: "u", sessionId: "s", agentId: "a", maxMessages: nil)
+        try await storage.save(assistant("Raw B"), userId: "u", sessionId: "s", agentId: "a", maxMessages: nil)
 
-        // Next fetch must re-hit the base store (cache was cleared).
-        _ = try await storage.fetch(userId: "u", sessionId: "s", agentId: "a", maxMessages: nil)
-        #expect(await spy.fetchCallCount == 2)
+        let allStored = await spy.storedMessages
+        let storedTexts = texts(allStored)
+        #expect(storedTexts.contains("Raw A"))
+        #expect(storedTexts.contains("Raw B"))
     }
 
     @Test func summarizerThrowingPropagates() async throws {

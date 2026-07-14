@@ -25,7 +25,11 @@ The Agent Squad System offers flexible storage options for maintaining conversat
     - Offers persistent storage using SQLite or Turso databases.
     - When you need local-first development with remote deployment options
 
-4. **Custom Storage Solutions**:
+4. **Summarizing Storage**:
+   - Wraps any storage backend and automatically compresses long histories via an LLM summarizer.
+   - Keeps agent context small without losing the thread of the conversation.
+
+5. **Custom Storage Solutions**:
    - The system allows for implementation of custom storage options to meet specific needs.
 
 ## Choosing the Right Storage Option
@@ -33,6 +37,7 @@ The Agent Squad System offers flexible storage options for maintaining conversat
 - Use In-Memory Storage for development, testing, or when persistence between application restarts is not necessary.
 - Choose DynamoDB Storage for production environments where conversation history needs to be preserved long-term or across multiple instances of your application.
 - Consider SQL Storage for a balance between simplicity and scalability, supporting both local and remote databases.
+- Use Summarizing Storage to keep agent context small in long-running conversations by wrapping any backend with an LLM summarizer.
 - Implement a custom storage solution if you have specific requirements not met by the provided options.
 
 ## Next Steps
@@ -40,6 +45,7 @@ The Agent Squad System offers flexible storage options for maintaining conversat
 - Learn more about [In-Memory Storage](/agent-squad/storage/in-memory)
 - Explore [DynamoDB Storage](/agent-squad/storage/dynamodb) for persistent storage
 - Explore [SQL Storage](/agent-squad/storage/sql) for persistent storage using SQLite or Turso.
+- Use [Summarizing Storage](/agent-squad/storage/summarizing) to compress long histories automatically.
 - Discover how to [implement custom storage solutions](/agent-squad/storage/custom)
 
 By leveraging these storage options, you can ensure that your Agent Squad System maintains the necessary context for coherent and effective conversations across various use cases and deployment scenarios.

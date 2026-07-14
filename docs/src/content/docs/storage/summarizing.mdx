@@ -1,0 +1,172 @@
+---
+title: Summarizing Chat Storage
+description: Automatically compress long conversation histories to keep agent context small
+---
+
+`SummarizingChatStorage` is a wrapper around any `ChatStorage` that automatically compresses long conversation histories.
+When a conversation grows past a configurable threshold, a user-supplied **summarizer** function is called to condense the older messages into a summary, while keeping a configurable number of recent message pairs verbatim.
+
+## How it works
+
+The wrapper uses a **lazy buffer** per `(userId, sessionId, agentId)` slot:
+
+1. **Before activation** — all reads and writes are pure delegations to the inner store.
+2. **Activation** — on the first `fetchChat` (or equivalent) that finds history exceeding the threshold (`triggerAt` message pairs), the summarizer is called and the compressed result is stored in an in-memory buffer. The inner store is **not modified**.
+3. **Once active** — every subsequent save appends the new message to the buffer and, if the buffer exceeds the threshold again, compresses immediately. So the next fetch is always fast — no LLM call on read.
+4. **`fetchAllChats` is never intercepted** — the raw, full history is always available for analytics, audit, or cross-agent routing via `fetchAllChats`.
+
+This design is inspired by LangChain's `ConversationSummaryBufferMemory`: compress on save, not on fetch; keep the inner store pristine.
+
+## Summarizer function
+
+You supply the summarizer. It receives the current buffer and the `keepLast` count, and must return the compressed history — typically a summary message followed by the last `keepLast` pairs.
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+<Tabs syncKey="runtime">
+  <TabItem label="TypeScript" icon="seti:typescript" color="blue">
+    ```typescript
+    import {
+      SummarizingChatStorage,
+      InMemoryChatStorage,
+      ConversationMessage,
+    } from 'agent-squad';
+
+    async function mySummarizer(
+      history: ConversationMessage[],
+      keepLast: number
+    ): Promise<ConversationMessage[]> {
+      const old = history.slice(0, -keepLast * 2);
+      const recent = history.slice(-keepLast * 2);
+      const summaryText = await myLLM.summarize(old);
+      return [
+        { role: 'user', content: [{ text: `[Summary]: ${summaryText}` }] },
+        ...recent,
+      ];
+    }
+
+    const storage = new SummarizingChatStorage(
+      new InMemoryChatStorage(),  // any ChatStorage
+      mySummarizer,
+      20,  // triggerAt: summarize when history exceeds 20 pairs (40 messages)
+      2,   // keepLast: keep the 2 most recent pairs verbatim
+    );
+    ```
+  </TabItem>
+  <TabItem label="Python" icon="seti:python">
+    ```python
+    from agent_squad.storage import SummarizingChatStorage, InMemoryChatStorage
+    from agent_squad.types import ConversationMessage
+
+    async def my_summarizer(
+        history: list[ConversationMessage],
+        keep_last: int
+    ) -> list[ConversationMessage]:
+        old = history[:-keep_last * 2]
+        recent = history[-keep_last * 2:]
+        summary_text = await my_llm.summarize(old)
+        summary = ConversationMessage(
+            role="user",
+            content=[{"text": f"[Summary]: {summary_text}"}]
+        )
+        return [summary] + recent
+
+    storage = SummarizingChatStorage(
+        storage=InMemoryChatStorage(),   # any ChatStorage
+        summarizer=my_summarizer,
+        trigger_at=20,   # summarize when history exceeds 20 pairs (40 messages)
+        keep_last=2,     # keep the 2 most recent pairs verbatim
+    )
+    ```
+  </TabItem>
+  <TabItem label="Swift" icon="seti:swift">
+    ```swift
+    import AgentSquad
+
+    let storage = SummarizingChatStorage(
+        wrapping: InMemoryChatStorage(),   // any ChatStorage
+        summarizer: { history, keepLast in
+            let old = Array(history.dropLast(keepLast * 2))
+            let recent = Array(history.suffix(keepLast * 2))
+            let summaryText = try await myLLM.summarize(old)
+            let summary = ConversationMessage(role: .user, text: "[Summary]: \(summaryText)")
+            return [summary] + recent
+        },
+        triggerAt: 20,  // summarize when history exceeds 20 pairs (40 messages)
+        keepLast: 2     // keep the 2 most recent pairs verbatim
+    )
+    ```
+  </TabItem>
+</Tabs>
+
+## Use with an orchestrator
+
+Drop it in anywhere a `ChatStorage` is accepted:
+
+<Tabs syncKey="runtime">
+  <TabItem label="TypeScript" icon="seti:typescript" color="blue">
+    ```typescript
+    import { AgentSquad, DynamoDbChatStorage, SummarizingChatStorage } from 'agent-squad';
+
+    const orchestrator = new AgentSquad({
+      storage: new SummarizingChatStorage(
+        new DynamoDbChatStorage(tableName, region),
+        mySummarizer,
+      ),
+    });
+    ```
+  </TabItem>
+  <TabItem label="Python" icon="seti:python">
+    ```python
+    from agent_squad.orchestrator import AgentSquad
+    from agent_squad.storage import DynamoDbChatStorage, SummarizingChatStorage
+
+    orchestrator = AgentSquad(
+        storage=SummarizingChatStorage(
+            storage=DynamoDbChatStorage(table_name, region),
+            summarizer=my_summarizer,
+        )
+    )
+    ```
+  </TabItem>
+  <TabItem label="Swift" icon="seti:swift">
+    ```swift
+    let orchestrator = Orchestrator(
+        agents: [myAgent],
+        store: SummarizingChatStorage(
+            wrapping: FileChatStorage(),
+            summarizer: mySummarizer,
+        )
+    )
+    ```
+  </TabItem>
+</Tabs>
+
+## Parameters
+
+| Parameter | Default | Description |
+|---|---|---|
+| `triggerAt` / `trigger_at` | `20` | Number of message **pairs** (user + assistant) above which the buffer is compressed. A buffer of 42 messages with `triggerAt: 20` triggers because 42 > 40. |
+| `keepLast` / `keep_last` | `2` | Number of most-recent message pairs the summarizer must keep verbatim. Passed to your summarizer as the second argument. |
+
+## What the summarizer receives
+
+The summarizer is called with:
+
+- `history` — the current in-memory buffer (all messages since the buffer was activated, including any already-compressed prefix from a previous summarization)
+- `keepLast` — the configured `keepLast` value
+
+It must return the new buffer — typically `[summaryMessage] + history.suffix(keepLast * 2)`.
+
+## Key properties
+
+- **Raw history is never modified.** The inner store always receives every raw message. The summarizer only affects the in-memory buffer that `fetchChat` returns.
+- **Summarization is eager, not lazy.** It runs during `save`, not during `fetch`, so fetches are always fast.
+- **`fetchAllChats` is unaffected.** Raw history — used by the classifier for cross-agent context — is always returned as-is from the inner store.
+- **Wraps any `ChatStorage`.** Combine with `DynamoDbChatStorage`, `SqlChatStorage`, `FileChatStorage`, or any custom implementation.
+
+## Considerations
+
+- The summarizer makes an LLM call, so it adds latency on save turns that cross the threshold.
+- Buffer state is in-memory. If the process restarts, the buffer is cold and the next `fetchChat` will re-activate from the inner store.
+- The summarizer is responsible for including `keepLast` pairs in the output. If it returns fewer messages than expected, subsequent context may be incomplete.

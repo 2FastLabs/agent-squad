@@ -1,56 +1,63 @@
 import Foundation
 
-/// Compresses a conversation history into a shorter form.
+/// Async callable that compresses a conversation buffer.
 ///
-/// Receives the full history and the number of most-recent message pairs to
-/// keep verbatim. Must return the compressed history — typically a summary
-/// message followed by the last `keepLast` pairs.
+/// Receives the current buffer and the number of recent pairs to keep verbatim.
+/// Must return the compressed history — typically a summary message followed by
+/// the last `keepLast` pairs.
 public typealias ChatSummarizer = @Sendable (
     _ history: [ConversationMessage],
     _ keepLast: Int
 ) async throws -> [ConversationMessage]
 
-// MARK: - Internal cache actor
+// MARK: - Internal buffer actor
 
-private actor SummarizationCache {
-    private var store: [String: [ConversationMessage]] = [:]
+private actor BufferStore {
+    private var buffers: [String: [ConversationMessage]] = [:]
 
     func get(key: String) -> [ConversationMessage]? {
-        store[key]
+        buffers[key]
     }
 
     func set(key: String, messages: [ConversationMessage]) {
-        store[key] = messages
+        buffers[key] = messages
     }
 
-    func invalidate(key: String) {
-        store.removeValue(forKey: key)
+    func append(key: String, message: ConversationMessage) {
+        buffers[key]?.append(message)
     }
 }
 
 // MARK: - SummarizingChatStorage
 
-/// A `ChatStorage` wrapper that automatically compresses long conversation histories.
+/// A `ChatStorage` wrapper that keeps agent context small via summarization.
 ///
-/// Wraps any `ChatStorage` implementation. On every `fetch` call, if the
-/// returned history exceeds `triggerAt` message pairs the user-supplied
-/// `summarizer` callable is invoked. The compressed result is cached in memory
-/// so subsequent fetches are fast without hitting the base store again.
+/// Raw messages are always written to the base store untouched — they remain
+/// available for analytics, audit, or replay via `fetchAllChats`. The
+/// summarizer only affects what the agent sees through `fetch`.
 ///
-/// `fetchAllChats` is never intercepted — the classifier always sees the full
-/// cross-agent history unmodified.
+/// **How it works**
 ///
-/// A `save` or `saveMessages` call invalidates the internal cache for that
-/// conversation slot so the next `fetch` re-evaluates from the base store.
+/// An in-memory buffer is maintained per (userId, sessionId, agentId) slot:
+///
+/// - The buffer is **activated lazily** on the first `fetch` call that finds
+///   history above the threshold. Before that, all operations are pure
+///   delegations to the base store.
+///
+/// - Once the buffer is active, every `save` appends the new message to it
+///   and, if the buffer exceeds the threshold again, calls the summarizer
+///   **immediately** — so the next `fetch` is always fast.
+///
+/// - `fetchAllChats` is never intercepted: raw full history is always available.
 ///
 /// ```swift
 /// let storage = SummarizingChatStorage(
-///     wrapping: FileChatStorage(),
+///     wrapping: InMemoryChatStorage(),
 ///     summarizer: { history, keepLast in
 ///         let old = Array(history.dropLast(keepLast * 2))
 ///         let recent = Array(history.suffix(keepLast * 2))
 ///         let summaryText = try await myLLM.summarize(old)
-///         let summary = ConversationMessage(role: .user, content: "[Summary]: \(summaryText)")
+///         let summary = ConversationMessage(role: .user, text: "[Summary]: \(summaryText)")
 ///         return [summary] + recent
 ///     },
 ///     triggerAt: 20,
@@ -62,15 +69,15 @@ public struct SummarizingChatStorage: ChatStorage {
     private let summarizer: ChatSummarizer
     private let triggerAt: Int
     private let keepLast: Int
-    private let cache: SummarizationCache
+    private let bufferStore: BufferStore
 
     /// - Parameters:
     ///   - base: The inner `ChatStorage` to wrap.
-    ///   - summarizer: Async callable that compresses the history.
-    ///   - triggerAt: Number of message **pairs** above which summarization is
-    ///     triggered. Defaults to 20.
-    ///   - keepLast: Number of most-recent message pairs to keep verbatim,
-    ///     passed to the summarizer. Defaults to 2.
+    ///   - summarizer: Async callable that compresses the buffer.
+    ///   - triggerAt: Number of message **pairs** above which the buffer is
+    ///     compressed. Defaults to 20.
+    ///   - keepLast: Number of most-recent message pairs to keep verbatim.
+    ///     Defaults to 2.
     public init(
         wrapping base: any ChatStorage,
         summarizer: @escaping ChatSummarizer,
@@ -81,7 +88,7 @@ public struct SummarizingChatStorage: ChatStorage {
         self.summarizer = summarizer
         self.triggerAt = triggerAt
         self.keepLast = keepLast
-        self.cache = SummarizationCache()
+        self.bufferStore = BufferStore()
     }
 
     public func fetch(
@@ -90,13 +97,14 @@ public struct SummarizingChatStorage: ChatStorage {
         agentId: String,
         maxMessages: Int?
     ) async throws -> [ConversationMessage] {
-        let key = cacheKey(userId: userId, sessionId: sessionId, agentId: agentId, maxMessages: maxMessages)
+        let key = bufferKey(userId: userId, sessionId: sessionId, agentId: agentId)
 
-        // Return cached compressed history if available.
-        if let cached = await cache.get(key: key) {
-            return cached
+        // Buffer is active — return it directly (no base read, no LLM call).
+        if let buf = await bufferStore.get(key: key) {
+            return buf
         }
 
+        // Cold start: load raw history from the base store.
         let history = try await base.fetch(
             userId: userId, sessionId: sessionId, agentId: agentId, maxMessages: maxMessages
         )
@@ -106,12 +114,7 @@ public struct SummarizingChatStorage: ChatStorage {
         }
 
         let compressed = try await summarizer(history, keepLast)
-
-        // Cache the compressed result in memory. All bundled stores use
-        // append semantics in saveMessages, so writing back would corrupt
-        // the history by adding the summary on top of the original messages.
-        await cache.set(key: key, messages: compressed)
-
+        await bufferStore.set(key: key, messages: compressed)
         return compressed
     }
 
@@ -122,7 +125,11 @@ public struct SummarizingChatStorage: ChatStorage {
         agentId: String,
         maxMessages: Int?
     ) async throws {
-        await cache.invalidate(key: cacheKey(userId: userId, sessionId: sessionId, agentId: agentId, maxMessages: maxMessages))
+        let key = bufferKey(userId: userId, sessionId: sessionId, agentId: agentId)
+        if await bufferStore.get(key: key) != nil {
+            await bufferStore.append(key: key, message: message)
+            try await compressIfNeeded(key: key)
+        }
         try await base.save(
             message,
             userId: userId, sessionId: sessionId, agentId: agentId,
@@ -137,7 +144,13 @@ public struct SummarizingChatStorage: ChatStorage {
         agentId: String,
         maxMessages: Int?
     ) async throws {
-        await cache.invalidate(key: cacheKey(userId: userId, sessionId: sessionId, agentId: agentId, maxMessages: maxMessages))
+        let key = bufferKey(userId: userId, sessionId: sessionId, agentId: agentId)
+        if await bufferStore.get(key: key) != nil {
+            for message in messages {
+                await bufferStore.append(key: key, message: message)
+            }
+            try await compressIfNeeded(key: key)
+        }
         try await base.saveMessages(
             messages,
             userId: userId, sessionId: sessionId, agentId: agentId,
@@ -149,13 +162,19 @@ public struct SummarizingChatStorage: ChatStorage {
         userId: String,
         sessionId: String
     ) async throws -> [ConversationMessage] {
-        // Never intercepted — classifier must see the full cross-agent history.
+        // Never intercepted — raw history always available for analytics/audit.
         try await base.fetchAllChats(userId: userId, sessionId: sessionId)
     }
 
     // MARK: - Private
 
-    private func cacheKey(userId: String, sessionId: String, agentId: String, maxMessages: Int?) -> String {
-        "\(userId)#\(sessionId)#\(agentId)#\(maxMessages.map(String.init) ?? "nil")"
+    private func bufferKey(userId: String, sessionId: String, agentId: String) -> String {
+        "\(userId)#\(sessionId)#\(agentId)"
+    }
+
+    private func compressIfNeeded(key: String) async throws {
+        guard let buf = await bufferStore.get(key: key), buf.count > triggerAt * 2 else { return }
+        let compressed = try await summarizer(buf, keepLast)
+        await bufferStore.set(key: key, messages: compressed)
     }
 }
