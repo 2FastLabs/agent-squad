@@ -2,10 +2,11 @@ import { ChatStorage } from "./chatStorage";
 import { ConversationMessage } from "../types";
 
 /**
- * A callable that compresses a conversation history.
+ * Async callable that compresses a conversation buffer.
  *
- * Receives the full history and the number of recent pairs to keep verbatim.
- * Must return the compressed history (summary message(s) + recent pairs).
+ * Receives the current buffer and the number of recent pairs to keep verbatim.
+ * Must return the compressed history (typically a summary message followed by
+ * the last `keepLast` pairs).
  */
 export type ChatSummarizer = (
   history: ConversationMessage[],
@@ -13,56 +14,49 @@ export type ChatSummarizer = (
 ) => Promise<ConversationMessage[]>;
 
 /**
- * A `ChatStorage` wrapper that automatically compresses long conversation histories.
+ * A `ChatStorage` wrapper that keeps agent context small via summarization.
  *
- * Wraps any `ChatStorage` implementation. On every `fetchChat` call, if the
- * returned history exceeds `triggerAt` message pairs the user-supplied
- * `summarizer` callable is invoked. The compressed result is cached internally
- * so subsequent fetches are fast without re-calling the summarizer.
+ * Raw messages are always written to the inner storage untouched — they remain
+ * available for analytics, audit, or replay via `fetchAllChats`. The summarizer
+ * only affects what the agent sees through `fetchChat`.
  *
- * `fetchAllChats` is never intercepted — the classifier always sees the full
- * cross-agent history unmodified.
+ * **How it works**
+ *
+ * An in-memory buffer is maintained per (userId, sessionId, agentId) slot:
+ *
+ * - The buffer is **activated lazily** on the first `fetchChat` call that finds
+ *   history above the threshold. Before that, all operations are pure
+ *   delegations to the inner storage.
+ *
+ * - Once the buffer is active, every `saveChatMessage` appends the new message
+ *   to it and, if the buffer exceeds the threshold again, calls the summarizer
+ *   **immediately** — so the next `fetchChat` is always fast.
+ *
+ * - `fetchAllChats` is never intercepted: raw full history is always available.
  *
  * @example
  * ```typescript
- * import { SummarizingChatStorage, InMemoryChatStorage } from 'agent-squad';
- *
- * async function mySummarizer(history, keepLast) {
- *   const old = history.slice(0, -keepLast * 2);
- *   const recent = history.slice(-keepLast * 2);
- *   const summary = await callLlmToSummarize(old);
- *   return [
- *     { role: 'user', content: [{ text: `[Summary]: ${summary}` }] },
- *     ...recent,
- *   ];
- * }
- *
  * const storage = new SummarizingChatStorage(
  *   new InMemoryChatStorage(),
- *   mySummarizer,
- *   20,  // triggerAt: summarize when history exceeds 20 pairs
- *   2,   // keepLast: keep the 2 most recent pairs verbatim
+ *   async (history, keepLast) => {
+ *     const old = history.slice(0, -keepLast * 2);
+ *     const recent = history.slice(-keepLast * 2);
+ *     const summary = await callLlmToSummarize(old);
+ *     return [{ role: 'user', content: [{ text: `[Summary]: ${summary}` }] }, ...recent];
+ *   },
+ *   20,  // triggerAt
+ *   2,   // keepLast
  * );
  * ```
  */
 export class SummarizingChatStorage extends ChatStorage {
   /**
-   * Internal cache: key → compressed history.
-   * After summarization the compressed result is stored here so subsequent
-   * `fetchChat` calls return immediately without hitting the inner storage or
-   * re-invoking the summarizer. A `saveChatMessage` call invalidates the entry
-   * so the next fetch re-evaluates from the inner store.
+   * Per-(userId, sessionId, agentId) in-memory buffer of the current compressed
+   * history. A missing key means the buffer is not yet active — saves are pure
+   * delegations until the first fetch crosses the threshold.
    */
-  private readonly cache: Map<string, ConversationMessage[]> = new Map();
+  private readonly buffers: Map<string, ConversationMessage[]> = new Map();
 
-  /**
-   * @param storage  The inner `ChatStorage` to wrap.
-   * @param summarizer  Async callable that compresses history.
-   * @param triggerAt  Number of message **pairs** above which summarization
-   *   is triggered. Defaults to 20.
-   * @param keepLast  Number of most-recent message pairs to keep verbatim.
-   *   Passed to the summarizer as the second argument. Defaults to 2.
-   */
   constructor(
     private readonly storage: ChatStorage,
     private readonly summarizer: ChatSummarizer,
@@ -72,6 +66,17 @@ export class SummarizingChatStorage extends ChatStorage {
     super();
   }
 
+  private key(userId: string, sessionId: string, agentId: string): string {
+    return `${userId}#${sessionId}#${agentId}`;
+  }
+
+  private async compressIfNeeded(key: string): Promise<void> {
+    const buf = this.buffers.get(key);
+    if (buf && buf.length > this.triggerAt * 2) {
+      this.buffers.set(key, await this.summarizer(buf, this.keepLast));
+    }
+  }
+
   async saveChatMessage(
     userId: string,
     sessionId: string,
@@ -79,8 +84,12 @@ export class SummarizingChatStorage extends ChatStorage {
     newMessage: ConversationMessage,
     maxHistorySize?: number
   ): Promise<ConversationMessage[]> {
-    // Invalidate cache so the next fetchChat re-evaluates from the inner store.
-    this.cache.delete(this.cacheKey(userId, sessionId, agentId, maxHistorySize));
+    const key = this.key(userId, sessionId, agentId);
+    const buf = this.buffers.get(key);
+    if (buf !== undefined) {
+      buf.push(newMessage);
+      await this.compressIfNeeded(key);
+    }
     return this.storage.saveChatMessage(userId, sessionId, agentId, newMessage, maxHistorySize);
   }
 
@@ -90,19 +99,20 @@ export class SummarizingChatStorage extends ChatStorage {
     agentId: string,
     maxHistorySize?: number
   ): Promise<ConversationMessage[]> {
-    const key = this.cacheKey(userId, sessionId, agentId, maxHistorySize);
+    const key = this.key(userId, sessionId, agentId);
 
-    // Return cached compressed history if available.
-    const cached = this.cache.get(key);
-    if (cached !== undefined) {
-      return cached;
+    // Buffer is active — return it directly (no storage read, no LLM call).
+    const buf = this.buffers.get(key);
+    if (buf !== undefined) {
+      return buf;
     }
 
+    // Cold start: load raw history from the inner store.
     const history = await this.storage.fetchChat(userId, sessionId, agentId, maxHistorySize);
 
     if (history.length > this.triggerAt * 2) {
       const compressed = await this.summarizer(history, this.keepLast);
-      this.cache.set(key, compressed);
+      this.buffers.set(key, compressed);
       return compressed;
     }
 
@@ -113,11 +123,7 @@ export class SummarizingChatStorage extends ChatStorage {
     userId: string,
     sessionId: string
   ): Promise<ConversationMessage[]> {
-    // Never intercepted — classifier must see the full cross-agent history.
+    // Never intercepted — raw history always available for analytics/audit.
     return this.storage.fetchAllChats(userId, sessionId);
-  }
-
-  private cacheKey(userId: string, sessionId: string, agentId: string, maxHistorySize?: number): string {
-    return `${userId}#${sessionId}#${agentId}#${maxHistorySize ?? 'nil'}`;
   }
 }

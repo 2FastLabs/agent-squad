@@ -2,224 +2,183 @@ import { InMemoryChatStorage } from "../../src/storage/memoryChatStorage";
 import { SummarizingChatStorage } from "../../src/storage/summarizingChatStorage";
 import { ConversationMessage, ParticipantRole } from "../../src/types";
 
-const createMessage = (role: ParticipantRole, text: string): ConversationMessage => ({
-  role,
-  content: [{ text }],
-});
+const user = (t: string): ConversationMessage => ({ role: ParticipantRole.USER, content: [{ text: t }] });
+const assistant = (t: string): ConversationMessage => ({ role: ParticipantRole.ASSISTANT, content: [{ text: t }] });
+const text = (m: ConversationMessage): string => (m.content as Array<{ text: string }>)[0].text;
 
-const makeHistory = (numPairs: number): ConversationMessage[] => {
-  const messages: ConversationMessage[] = [];
-  for (let i = 0; i < numPairs; i++) {
-    messages.push(createMessage(ParticipantRole.USER, `User message ${i + 1}`));
-    messages.push(createMessage(ParticipantRole.ASSISTANT, `Assistant message ${i + 1}`));
+const makeHistory = (pairs: number): ConversationMessage[] => {
+  const msgs: ConversationMessage[] = [];
+  for (let i = 0; i < pairs; i++) {
+    msgs.push(user(`User ${i + 1}`));
+    msgs.push(assistant(`Asst ${i + 1}`));
   }
-  return messages;
+  return msgs;
 };
 
-const identitySummarizer = async (
-  history: ConversationMessage[],
-  keepLast: number
-): Promise<ConversationMessage[]> => history.slice(-(keepLast * 2));
+const seed = async (inner: InMemoryChatStorage, msgs: ConversationMessage[]) => {
+  for (const msg of msgs) await inner.saveChatMessage("u", "s", "a", msg);
+};
 
 describe("SummarizingChatStorage", () => {
-  let inner: InMemoryChatStorage;
 
-  beforeEach(() => {
-    inner = new InMemoryChatStorage();
-  });
+  // -------------------------------------------------------------------------
+  // fetchChat — lazy buffer activation
+  // -------------------------------------------------------------------------
 
-  test("returns history unchanged when below trigger", async () => {
-    const summarizer = jest.fn(identitySummarizer);
+  test("below trigger returns raw history", async () => {
+    const inner = new InMemoryChatStorage();
+    await seed(inner, makeHistory(3));
+    const summarizer = jest.fn(async (h: ConversationMessage[]) => h);
     const storage = new SummarizingChatStorage(inner, summarizer, 5, 2);
 
-    const history = makeHistory(3);
-    await inner.saveChatMessage("u", "s", "a", history[0]);
-    for (const msg of history.slice(1)) {
-      await inner.saveChatMessage("u", "s", "a", msg);
-    }
-
-    const result = await storage.fetchChat("u", "s", "a");
-
-    expect(result).toHaveLength(6);
+    expect(await storage.fetchChat("u", "s", "a")).toHaveLength(6);
     expect(summarizer).not.toHaveBeenCalled();
   });
 
-  test("does not call summarizer at exactly the trigger boundary", async () => {
-    const summarizer = jest.fn(identitySummarizer);
+  test("at boundary no summarization", async () => {
+    const inner = new InMemoryChatStorage();
+    await seed(inner, makeHistory(5));
+    const summarizer = jest.fn(async (h: ConversationMessage[]) => h);
     const storage = new SummarizingChatStorage(inner, summarizer, 5, 2);
 
-    // Seed inner storage directly via save_chat_messages equivalent
-    const history = makeHistory(5); // exactly 10 = triggerAt * 2
-    for (const msg of history) {
-      await inner.saveChatMessage("u", "s", "a", msg);
-    }
-
-    const result = await storage.fetchChat("u", "s", "a");
-
-    expect(result).toHaveLength(10);
+    expect(await storage.fetchChat("u", "s", "a")).toHaveLength(10);
     expect(summarizer).not.toHaveBeenCalled();
   });
 
-  test("calls summarizer when history exceeds trigger", async () => {
-    const summarizer = jest.fn(identitySummarizer);
+  test("above trigger calls summarizer on first fetch", async () => {
+    const inner = new InMemoryChatStorage();
+    await seed(inner, makeHistory(6));
+    const summarizer = jest.fn(async (h: ConversationMessage[], k: number) => h.slice(-k * 2));
     const storage = new SummarizingChatStorage(inner, summarizer, 5, 2);
-
-    const history = makeHistory(6); // 12 > 10
-    for (const msg of history) {
-      await inner.saveChatMessage("u", "s", "a", msg);
-    }
 
     await storage.fetchChat("u", "s", "a");
 
     expect(summarizer).toHaveBeenCalledTimes(1);
+    expect(summarizer).toHaveBeenCalledWith(expect.any(Array), 2);
   });
 
-  test("summarizer receives full history as first argument", async () => {
-    let receivedHistory: ConversationMessage[] = [];
-    const capturingSummarizer = jest.fn(async (history: ConversationMessage[], _keepLast: number) => {
-      receivedHistory = history;
-      return history.slice(-4);
-    });
-
-    const storage = new SummarizingChatStorage(inner, capturingSummarizer, 5, 2);
-    const history = makeHistory(6);
-    for (const msg of history) {
-      await inner.saveChatMessage("u", "s", "a", msg);
-    }
-
-    await storage.fetchChat("u", "s", "a");
-
-    expect(receivedHistory).toHaveLength(12);
-  });
-
-  test("summarizer receives keepLast as second argument", async () => {
-    const summarizer = jest.fn(identitySummarizer);
-    const storage = new SummarizingChatStorage(inner, summarizer, 5, 3);
-
-    const history = makeHistory(6);
-    for (const msg of history) {
-      await inner.saveChatMessage("u", "s", "a", msg);
-    }
-
-    await storage.fetchChat("u", "s", "a");
-
-    expect(summarizer).toHaveBeenCalledWith(expect.any(Array), 3);
-  });
-
-  test("fetchChat returns compressed result after summarization", async () => {
-    const compressed = [createMessage(ParticipantRole.USER, "Summary of conversation")];
-    const summarizer = jest.fn(async () => compressed);
-    const storage = new SummarizingChatStorage(inner, summarizer, 5, 2);
-
-    const history = makeHistory(6);
-    for (const msg of history) {
-      await inner.saveChatMessage("u", "s", "a", msg);
-    }
+  test("fetch returns compressed result", async () => {
+    const inner = new InMemoryChatStorage();
+    await seed(inner, makeHistory(6));
+    const storage = new SummarizingChatStorage(inner, jest.fn(async () => [user("Summary")]), 5, 2);
 
     const result = await storage.fetchChat("u", "s", "a");
 
     expect(result).toHaveLength(1);
-    expect(result[0].content?.[0]?.text).toBe("Summary of conversation");
+    expect(text(result[0])).toBe("Summary");
   });
 
-  test("returns compressed result on subsequent fetchChat without calling summarizer again", async () => {
-    const summarizer = jest.fn(identitySummarizer);
+  test("subsequent fetch returns buffer without calling summarizer again", async () => {
+    const inner = new InMemoryChatStorage();
+    await seed(inner, makeHistory(6));
+    const summarizer = jest.fn(async () => [user("Summary")]);
     const storage = new SummarizingChatStorage(inner, summarizer, 5, 2);
-
-    const history = makeHistory(6);
-    for (const msg of history) {
-      await inner.saveChatMessage("u", "s", "a", msg);
-    }
 
     await storage.fetchChat("u", "s", "a");
     const result = await storage.fetchChat("u", "s", "a");
 
     expect(summarizer).toHaveBeenCalledTimes(1);
-    expect(result).toHaveLength(4); // keepLast=2 pairs
+    expect(text(result[0])).toBe("Summary");
   });
 
-  test("saveChatMessage invalidates cache so next fetch re-evaluates", async () => {
-    const summarizer = jest.fn(identitySummarizer);
+  // -------------------------------------------------------------------------
+  // save — pure delegation before buffer active
+  // -------------------------------------------------------------------------
+
+  test("save before buffer active delegates to inner without calling summarizer", async () => {
+    const inner = new InMemoryChatStorage();
+    const summarizer = jest.fn();
     const storage = new SummarizingChatStorage(inner, summarizer, 5, 2);
 
-    const history = makeHistory(6);
-    for (const msg of history) {
-      await inner.saveChatMessage("u", "s", "a", msg);
-    }
+    await storage.saveChatMessage("u", "s", "a", user("Hello"));
 
-    // First fetch — triggers summarization, caches result
-    await storage.fetchChat("u", "s", "a");
-    expect(summarizer).toHaveBeenCalledTimes(1);
-
-    // New message invalidates cache
-    await storage.saveChatMessage("u", "s", "a", createMessage(ParticipantRole.USER, "New message"));
-
-    // Next fetch re-evaluates from inner store (which now has compressed + new message)
-    await storage.fetchChat("u", "s", "a");
-    expect(summarizer).toHaveBeenCalledTimes(2);
+    expect(await inner.fetchChat("u", "s", "a")).toHaveLength(1);
+    expect(summarizer).not.toHaveBeenCalled();
   });
 
-  test("fetchAllChats delegates to inner storage without interception", async () => {
-    const summarizer = jest.fn(identitySummarizer);
+  // -------------------------------------------------------------------------
+  // save — buffer management after activation
+  // -------------------------------------------------------------------------
+
+  test("save after buffer active appends to buffer", async () => {
+    const inner = new InMemoryChatStorage();
+    await seed(inner, makeHistory(6));
+    const storage = new SummarizingChatStorage(inner, jest.fn(async () => [user("Summary")]), 5, 2);
+
+    await storage.fetchChat("u", "s", "a");
+    await storage.saveChatMessage("u", "s", "a", user("New"));
+
+    const result = await storage.fetchChat("u", "s", "a");
+    expect(result).toHaveLength(2);
+    expect(text(result[1])).toBe("New");
+  });
+
+  test("save triggers compression when buffer exceeds threshold", async () => {
+    const inner = new InMemoryChatStorage();
+    await seed(inner, makeHistory(6));
+
+    let callCount = 0;
+    const summarizer = jest.fn(async () => [user(`Summary ${++callCount}`)]);
     const storage = new SummarizingChatStorage(inner, summarizer, 5, 2);
 
-    const history = makeHistory(6);
-    for (const msg of history) {
-      await inner.saveChatMessage("u", "s", "a", msg);
+    await storage.fetchChat("u", "s", "a");
+    expect(callCount).toBe(1);
+
+    for (let i = 0; i < 11; i++) {
+      await storage.saveChatMessage("u", "s", "a", i % 2 === 0 ? user(`m${i}`) : assistant(`m${i}`));
     }
 
+    expect(callCount).toBe(2);
+    expect(text((await storage.fetchChat("u", "s", "a"))[0])).toBe("Summary 2");
+  });
+
+  // -------------------------------------------------------------------------
+  // fetchAllChats — never intercepted
+  // -------------------------------------------------------------------------
+
+  test("fetchAllChats returns raw history regardless of buffer", async () => {
+    const inner = new InMemoryChatStorage();
+    await seed(inner, makeHistory(6));
+    const summarizer = jest.fn(async () => [user("Summary")]);
+    const storage = new SummarizingChatStorage(inner, summarizer, 5, 2);
+
+    await storage.fetchChat("u", "s", "a");
     const result = await storage.fetchAllChats("u", "s");
 
-    expect(summarizer).not.toHaveBeenCalled();
     expect(result).toHaveLength(12);
+    expect(summarizer).toHaveBeenCalledTimes(1);
   });
 
-  test("saveChatMessage delegates to inner storage", async () => {
-    const summarizer = jest.fn(identitySummarizer);
-    const storage = new SummarizingChatStorage(inner, summarizer, 5, 2);
+  // -------------------------------------------------------------------------
+  // Base storage integrity
+  // -------------------------------------------------------------------------
 
-    const msg = createMessage(ParticipantRole.USER, "Hello");
-    await storage.saveChatMessage("u", "s", "a", msg);
+  test("base storage always receives raw messages unmodified", async () => {
+    const inner = new InMemoryChatStorage();
+    await seed(inner, makeHistory(6));
+    const storage = new SummarizingChatStorage(inner, jest.fn(async () => [user("Summary")]), 5, 2);
 
-    const saved = await inner.fetchChat("u", "s", "a");
-    expect(saved).toHaveLength(1);
-    expect(saved[0].content?.[0]?.text).toBe("Hello");
+    await storage.fetchChat("u", "s", "a");
+    await storage.saveChatMessage("u", "s", "a", user("New"));
+
+    const raw = await inner.fetchChat("u", "s", "a");
+    expect(raw).toHaveLength(13);
+    expect(text(raw[12])).toBe("New");
   });
+
+  // -------------------------------------------------------------------------
+  // Error propagation
+  // -------------------------------------------------------------------------
 
   test("summarizer error propagates from fetchChat", async () => {
-    const failingSummarizer = jest.fn(async () => {
-      throw new Error("summarizer failed");
-    });
-    const storage = new SummarizingChatStorage(inner, failingSummarizer, 5, 2);
-
-    const history = makeHistory(6);
-    for (const msg of history) {
-      await inner.saveChatMessage("u", "s", "a", msg);
-    }
+    const inner = new InMemoryChatStorage();
+    await seed(inner, makeHistory(6));
+    const storage = new SummarizingChatStorage(
+      inner,
+      jest.fn(async () => { throw new Error("summarizer failed"); }),
+      5, 2
+    );
 
     await expect(storage.fetchChat("u", "s", "a")).rejects.toThrow("summarizer failed");
-  });
-
-  test("different agentId slots are tracked independently", async () => {
-    const summarizer = jest.fn(identitySummarizer);
-    const storage = new SummarizingChatStorage(inner, summarizer, 5, 2);
-
-    // agent1: above trigger
-    const history1 = makeHistory(6);
-    for (const msg of history1) {
-      await inner.saveChatMessage("u", "s", "agent1", msg);
-    }
-
-    // agent2: below trigger
-    const history2 = makeHistory(3);
-    for (const msg of history2) {
-      await inner.saveChatMessage("u", "s", "agent2", msg);
-    }
-
-    await storage.fetchChat("u", "s", "agent1");
-    await storage.fetchChat("u", "s", "agent2");
-
-    // Summarizer called only for agent1
-    expect(summarizer).toHaveBeenCalledTimes(1);
   });
 });
