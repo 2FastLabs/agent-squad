@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 from agent_squad.types import ConversationMessage, ParticipantRole
 from agent_squad.storage import InMemoryChatStorage
 from agent_squad.storage.summarizing_chat_storage import SummarizingChatStorage

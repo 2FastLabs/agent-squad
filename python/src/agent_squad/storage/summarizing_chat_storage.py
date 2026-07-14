@@ -130,9 +130,10 @@ class SummarizingChatStorage(ChatStorage):
         if key in self._cache:
             return self._cache[key]
 
-        history = await self._storage.fetch_chat(
-            user_id, session_id, agent_id, max_history_size
-        )
+        # Fetch the full history — we need it untruncated to evaluate the
+        # trigger threshold. max_history_size is accepted for interface
+        # compatibility but size management is delegated to trigger_at/keep_last.
+        history = await self._storage.fetch_chat(user_id, session_id, agent_id)
 
         if len(history) > self._trigger_at * 2:
             compressed = await self._summarizer(history, self._keep_last)
