@@ -1,5 +1,5 @@
 import pytest
-from agent_squad.utils import AgentTools, AgentTool
+from agent_squad.utils import AgentTools, AgentTool, AgentToolCallbacks, ToolResult, UIPayload
 from agent_squad.types import AgentProviderType, ConversationMessage, ParticipantRole
 from anthropic import Anthropic
 from anthropic.types import ToolUseBlock
@@ -532,6 +532,61 @@ def test_self_param():
         name="test",
         func=_handler
     )])
+
+
+@pytest.mark.asyncio
+async def test_tool_handler_routes_toolresult_content_to_model():
+    """A tool returning a ToolResult: only its text reaches the model; callbacks get the full
+    object (structured data + widget), which is what GroundedAgent captures."""
+    def order_tool(order_id: str):
+        return ToolResult(
+            content=f"Order {order_id}: shipped",
+            structured_content={"order_id": order_id, "status": "shipped"},
+            ui=UIPayload(resource_uri="ui://order", mime_type="text/html;profile=mcp-app"),
+        )
+
+    captured = {}
+
+    class _CB(AgentToolCallbacks):
+        async def on_tool_end(self, tool_name, payload_input, output, *a, **k):
+            captured["output"] = output
+
+    tools = AgentTools([AgentTool(name="get_order", func=order_tool)], callbacks=_CB())
+    msg = ConversationMessage(role=ParticipantRole.ASSISTANT.value, content=[{
+        "toolUse": {"name": "get_order", "toolUseId": "1", "input": {"order_id": "42"}}}])
+
+    response = await tools.tool_handler(AgentProviderType.BEDROCK.value, msg, [])
+    # Only the text content reaches the model — not the structured data or the widget.
+    assert response.content[0]["toolResult"]["content"] == [{"text": "Order 42: shipped"}]
+    # Callbacks receive the full ToolResult (widget included).
+    assert isinstance(captured["output"], ToolResult)
+    assert captured["output"].ui.resource_uri == "ui://order"
+
+
+@pytest.mark.asyncio
+async def test_tool_handler_toolresult_empty_content_falls_back_to_structured():
+    """A ToolResult with no text: the model gets the JSON of structured_content, not a blank."""
+    def t(x: str):
+        return ToolResult(content="", structured_content={"x": x})
+
+    tools = AgentTools([AgentTool(name="t", func=t)])
+    msg = ConversationMessage(role=ParticipantRole.ASSISTANT.value, content=[{
+        "toolUse": {"name": "t", "toolUseId": "1", "input": {"x": "hi"}}}])
+    response = await tools.tool_handler(AgentProviderType.BEDROCK.value, msg, [])
+    assert response.content[0]["toolResult"]["content"] == [{"text": '{"x": "hi"}'}]
+
+
+@pytest.mark.asyncio
+async def test_tool_handler_toolresult_anthropic():
+    """The ToolResult routing applies on the Anthropic provider too."""
+    def order_tool(order_id: str):
+        return ToolResult(content=f"Order {order_id}", structured_content={"id": order_id})
+
+    tools = AgentTools([AgentTool(name="get_order", func=order_tool)])
+    msg = ConversationMessage(role=ParticipantRole.ASSISTANT.value, content=[
+        ToolUseBlock(name="get_order", type="tool_use", id="9", input={"order_id": "7"})])
+    response = await tools.tool_handler(AgentProviderType.ANTHROPIC.value, msg, [])
+    assert response.get("content")[0] == {"type": "tool_result", "tool_use_id": "9", "content": "Order 7"}
 
 
 

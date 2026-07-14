@@ -1,7 +1,8 @@
 """Module for importing helper functions and Logger."""
 from .helpers import is_tool_input, conversation_to_dict
 from .logger import Logger
-from .tool import AgentTool, AgentTools, AgentToolCallbacks
+from .tool import AgentTool, AgentTools, AgentToolCallbacks, ToolResult
+from .ui import UIPayload, UISecurity, UIPolicy
 
 __all__ = [
     'is_tool_input',
@@ -9,5 +10,9 @@ __all__ = [
     'Logger',
     'AgentTool',
     'AgentTools',
-    'AgentToolCallbacks'
+    'AgentToolCallbacks',
+    'ToolResult',
+    'UIPayload',
+    'UISecurity',
+    'UIPolicy',
 ]

@@ -15,7 +15,7 @@ from agent_squad.agents import (
 )
 from agent_squad.agents.grounded_agent import Grounding, DEFAULT_PRESENTER_PROMPT
 from agent_squad.types import ConversationMessage, ParticipantRole
-from agent_squad.utils import AgentTool, AgentTools
+from agent_squad.utils import AgentTool, AgentTools, ToolResult, UIPayload, UIPolicy
 
 
 def _msg(text: str) -> ConversationMessage:
@@ -212,6 +212,70 @@ async def test_streaming_no_tool_turn_yields_gatherer_draft():
 
 
 # ---------------------------------------------------------------------------
+# Tool UI (widget) forwarding
+# ---------------------------------------------------------------------------
+
+def _ui_tool_result():
+    payload = UIPayload(resource_uri="ui://shop/order-card", mime_type="text/html;profile=mcp-app",
+                        template="<div>card</div>", structured_content={"status": "shipped"})
+    return ToolResult(content="Order: shipped", structured_content={"status": "shipped"}, ui=payload)
+
+
+@pytest.mark.asyncio
+async def test_streaming_forwards_widget_before_presenter_text():
+    tools = _tools()
+    gatherer = _FakeGatherer(AgentOptions(name="g", description=""), tools=tools,
+                             tool_calls=[("get_order", {}, _ui_tool_result())], draft="", streaming=True)
+    presenter = _FakePresenter(AgentOptions(name="p", description=""), reply="Your order shipped.", streaming=True)
+    agent = _build(gatherer, presenter, tools)
+
+    chunks = [c async for c in await agent.process_request("order?", "u", "s", [])]
+    widget_chunks = [c for c in chunks if c.ui is not None]
+    assert len(widget_chunks) == 1
+    assert widget_chunks[0].ui.resource_uri == "ui://shop/order-card"
+    # The widget precedes the presenter's final text.
+    assert chunks.index(widget_chunks[0]) < len(chunks) - 1
+    assert chunks[-1].final_message.content[0]["text"] == "Your order shipped."
+    # The presenter is fed the structured facts, not the widget wrapper.
+    assert '"status": "shipped"' in presenter.received_input
+
+
+@pytest.mark.asyncio
+async def test_ui_policy_suppress_emits_no_widget():
+    tools = _tools()
+    gatherer = _FakeGatherer(AgentOptions(name="g", description=""), tools=tools,
+                             tool_calls=[("get_order", {}, _ui_tool_result())], draft="", streaming=True)
+    presenter = _FakePresenter(AgentOptions(name="p", description=""), reply="text only", streaming=True)
+    agent = _build(gatherer, presenter, tools, ui_policy=UIPolicy.SUPPRESS)
+
+    chunks = [c async for c in await agent.process_request("q", "u", "s", [])]
+    assert all(c.ui is None for c in chunks)
+    assert chunks[-1].final_message.content[0]["text"] == "text only"
+
+
+@pytest.mark.asyncio
+async def test_non_streaming_collect_drops_widget():
+    # The widget is surfaced on the streaming path only; non-streaming returns a plain message.
+    tools = _tools()
+    gatherer = _FakeGatherer(AgentOptions(name="g", description=""), tools=tools,
+                             tool_calls=[("get_order", {}, _ui_tool_result())], draft="")
+    presenter = _FakePresenter(AgentOptions(name="p", description=""), reply="Your order shipped.")
+    agent = _build(gatherer, presenter, tools)
+
+    result = await agent.process_request("order?", "u", "s", [])
+    assert isinstance(result, ConversationMessage)
+    assert result.content[0]["text"] == "Your order shipped."
+
+
+def test_grounding_primary_ui():
+    tr = _ui_tool_result()
+    assert Grounding.primary_ui([CapturedToolResult("get_order", tr)]).resource_uri == "ui://shop/order-card"
+    # A plain (non-UI) primary tool yields no widget; last call wins.
+    assert Grounding.primary_ui([CapturedToolResult("a", tr), CapturedToolResult("b", "plain")]) is None
+    assert Grounding.primary_ui([]) is None
+
+
+# ---------------------------------------------------------------------------
 # Curators
 # ---------------------------------------------------------------------------
 
@@ -225,6 +289,19 @@ def test_datablock_curator_string_and_structured():
     assert "### detail\n" in out
     assert '"name": "shoe"' in out  # pretty JSON, sorted keys
     assert "\n\n" in out  # sections joined by blank line
+
+
+def test_datablock_curator_unwraps_toolresult():
+    curator = DataBlockCurator()
+    # structured_content present -> curate from it, not the widget wrapper or content text
+    out = curator.curate([CapturedToolResult("get_product", ToolResult(
+        content="ignored text", structured_content={"price": 90}))])
+    assert "### get_product" in out
+    assert '"price": 90' in out
+    assert "ignored text" not in out
+    # no structured_content -> fall back to the content text
+    out2 = curator.curate([CapturedToolResult("t", ToolResult(content="plain text"))])
+    assert "### t\nplain text" in out2
 
 
 def test_per_tool_curator_routes_and_falls_back():

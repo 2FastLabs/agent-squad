@@ -3,7 +3,7 @@ import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from agent_squad.types import ConversationMessage
-from agent_squad.utils import Logger
+from agent_squad.utils import Logger, UIPayload
 from uuid import UUID
 
 # Type aliases for complex types
@@ -41,12 +41,14 @@ class AgentStreamResponse:
     Attributes:
         text: The current text in the stream
         final_message: The complete message when streaming is complete
+        ui: A tool-advertised widget for this turn, when one was forwarded (render-only).
     """
 
     text: str = ""
     thinking: Optional[str] = ""
     final_message: Optional[ConversationMessage] = None
     final_thinking: Optional[str] = None
+    ui: Optional[UIPayload] = None
 
 
 @dataclass

@@ -8,7 +8,7 @@ The `GroundedAgent` is the framework's answer to LLM hallucination in tool-drive
 A chit-chat turn that calls no tools skips the presenter entirely: the gatherer answers directly in one pass.
 
 :::note
-This mirrors the Swift [`GroundedAgent`](/agent-squad/swift/agents/built-in/grounded-agent/). The Swift variant additionally supports tool-UI widgets (`UIPolicy`) and per-phase trace spans; those have no equivalent in the Python/TypeScript trees and are intentionally omitted here.
+Tool-UI widgets are supported in Swift and Python — a tool can return a component that the `GroundedAgent` forwards to the caller (see [Tool UI](#tool-ui-widgets) below). TypeScript support is not yet available. Per-phase trace spans remain Swift-only.
 :::
 
 ## How it works
@@ -385,6 +385,65 @@ When the gatherer makes no tool calls, the `GroundedAgent` emits the gatherer's 
 ## Streaming
 
 `GroundedAgent` streams when its **presenter** streams (`is_streaming_enabled` / `isStreamingEnabled` tracks the presenter). On a no-tool turn the gatherer's reply is re-emitted as a single streamed chunk. The gatherer always runs to completion internally so its tool results can be captured before the presenter is invoked.
+
+## Tool UI (widgets)
+
+<span id="tool-ui-widgets"></span>
+
+*Python only for now; TypeScript support is not yet available.*
+
+A tool can return an interactive UI component (an "MCP App" widget) alongside its text. Instead of a plain string, the tool returns a `ToolResult`:
+
+- `content` — the text added to the model's context (what the gatherer reads).
+- `structured_content` — the data the widget renders from. **Render-only**: never added to the model's context, so the model cannot hallucinate from it. The curator also feeds the presenter from this.
+- `ui` — a `UIPayload`: the self-contained component (its `resource_uri`, `mime_type`, `template`, render-only `structured_content`, and a `UISecurity` policy the host turns into a CSP).
+
+When the turn's primary tool returns a `UIPayload`, the `GroundedAgent` forwards it to the caller on the **streaming path** as the `ui` field of an `AgentStreamResponse`, emitted before the presenter's text streams in. This is governed by `ui_policy` (`UIPolicy.FORWARD`, the default, or `UIPolicy.SUPPRESS` to drop the widget and keep the grounded text only). Drawing the widget is the host's job — the framework only carries the data.
+
+```python
+from agent_squad.utils import AgentTool, AgentTools, ToolResult, UIPayload, UISecurity, UIPolicy
+from agent_squad.agents import GroundedAgent, GroundedAgentOptions
+
+def get_order(order_id: str) -> ToolResult:
+    """Look up an order's status and delivery estimate.
+
+    :param order_id: the order id
+    """
+    data = {"order_id": order_id, "status": "In transit", "eta": "2026-07-02"}
+    return ToolResult(
+        # text → the gatherer's context (so it can reason / follow up)
+        content=f"Order {order_id}: {data['status']}, ETA {data['eta']}.",
+        # render-only → hydrates the widget and the presenter feed, never the model
+        structured_content=data,
+        ui=UIPayload(
+            resource_uri="ui://shop/order-card",
+            mime_type="text/html;profile=mcp-app",
+            template="<div class='card'>…render from window.WIDGET_DATA…</div>",
+            structured_content=data,
+            security=UISecurity(resource_domains=["https://cdn.myshop.com"], prefers_border=True),
+        ),
+    )
+
+tools = AgentTools([AgentTool(name="get_order", func=get_order, required=["order_id"])])
+
+shop = GroundedAgent(GroundedAgentOptions(
+    name="Shop",
+    description="Orders, grounded in real data.",
+    gatherer=gatherer,          # built as above, with tools=tools
+    presenter=presenter,
+    tools=tools,
+    ui_policy=UIPolicy.FORWARD,  # default; use SUPPRESS for text-only
+))
+
+# Consume the widget on the stream:
+async for chunk in await shop.process_request("where is my order #1234?", user_id, session_id, []):
+    if chunk.ui is not None:
+        render_widget(chunk.ui)          # your host renders the component
+    elif chunk.text:
+        print(chunk.text, end="")        # the grounded sentence streams underneath
+```
+
+An `.app`-only tool (one the widget calls back into, but the model must never see) is kept out of what the model is offered by filtering the provider's tool list to model-visible tools — the same way the widget's Refresh button re-invokes a tool without the LLM's involvement.
 
 ## Relation to other types
 

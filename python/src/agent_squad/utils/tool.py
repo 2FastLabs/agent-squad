@@ -1,13 +1,15 @@
 from typing import Any, Optional, Callable, get_type_hints
 import inspect
+import json
 from functools import wraps
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from agent_squad.types import (
     AgentProviderType,
     ConversationMessage,
     ParticipantRole,
 )
+from agent_squad.utils.ui import UIPayload
 from uuid import UUID
 
 
@@ -18,6 +20,19 @@ class PropertyDefinition:
     enum: Optional[list] = None
 
 
+@dataclass
+class ToolResult:
+    """A tool return that carries render-only data and/or a UI widget. Only ``content`` (text) is
+    added to the model's context; ``structured_content`` and ``ui`` never reach the model. Tools
+    that need none of this can still just return a string."""
+
+    content: str = ""
+    structured_content: Any = field(default_factory=dict)
+    ui: Optional[UIPayload] = None
+
+
+# Internal wire wrapper (tool_use_id + text) that formats a result for the model. Not the same as
+# the public ``ToolResult`` below, which is what a tool returns.
 @dataclass
 class AgentToolResult:
     tool_use_id: str
@@ -270,8 +285,14 @@ class AgentTools:
                 tool_name, input_data, result, metadata={"agent_info": agent_info}
             )
 
-            # Create tool result
-            tool_result = AgentToolResult(tool_id, result)
+            # A ToolResult carries render-only data/UI; only its text goes to the model. Empty text
+            # falls back to the structured data so the model isn't blind. Plain returns pass through.
+            if isinstance(result, ToolResult):
+                model_content = result.content or json.dumps(result.structured_content, default=str)
+            else:
+                model_content = result
+
+            tool_result = AgentToolResult(tool_id, model_content)
 
             # Format according to platform
             formatted_result = (

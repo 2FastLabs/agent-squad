@@ -5,8 +5,8 @@ A *gatherer* LLM calls tools and sees the raw results but never speaks to the us
 so it cannot invent values beyond what was fetched. A chit-chat turn that calls no tools is answered
 in one pass by the gatherer, skipping the presenter.
 
-This mirrors the Swift ``GroundedAgent``. The tool-UI (widget) and trace-span machinery from the
-Swift implementation has no equivalent in this tree and is intentionally omitted.
+When a tool returns a ``ToolResult`` carrying a UI widget, the primary tool's widget is forwarded to
+the caller on the streaming response, governed by ``ui_policy``.
 """
 
 import json
@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from typing import Any, AsyncIterable, Callable, Optional, Union
 
 from agent_squad.types import ConversationMessage, ParticipantRole
-from agent_squad.utils import AgentToolCallbacks, AgentTools, Logger
+from agent_squad.utils import AgentToolCallbacks, AgentTools, Logger, ToolResult, UIPayload, UIPolicy
 
 from .agent import Agent, AgentOptions, AgentStreamResponse
 
@@ -54,10 +54,14 @@ class DataBlockCurator(ToolOutputCurator):
     @staticmethod
     def section(result: CapturedToolResult) -> str:
         """One section. Also used as ``PerToolCurator``'s fallback formatter."""
-        if isinstance(result.result, str):
-            body = result.result
+        value = result.result
+        if isinstance(value, ToolResult):
+            # Curate from the render-only structured data (the facts), not the widget wrapper.
+            value = value.structured_content or value.content
+        if isinstance(value, str):
+            body = value
         else:
-            body = json.dumps(result.result, indent=2, sort_keys=True, default=str)
+            body = json.dumps(value, indent=2, sort_keys=True, default=str)
         return f"### {result.name}\n{body}"
 
 
@@ -106,6 +110,14 @@ class Grounding:
         return results[-1] if results else None
 
     @staticmethod
+    def primary_ui(results: list[CapturedToolResult]) -> Optional[UIPayload]:
+        """The widget advertised by the primary tool, if it returned one."""
+        primary = Grounding.primary(results)
+        if primary and isinstance(primary.result, ToolResult):
+            return primary.result.ui
+        return None
+
+    @staticmethod
     def presenter_message(question: str, data: str) -> str:
         """The presenter's user message: question and curated data, tagged so the model can tell
         them apart."""
@@ -150,6 +162,8 @@ class GroundedAgentOptions(AgentOptions):
         tools: The ``AgentTools`` the gatherer uses. GroundedAgent hooks it to capture results.
         curator: Shapes gathered results into the presenter feed. Default: ``DataBlockCurator``.
         presenter_prompt: Per-tool presenter system prompts. Default: a generic grounding prompt.
+        ui_policy: Whether a tool-advertised widget is forwarded to the caller (on the streaming
+            path only). Default: forward.
     """
 
     gatherer: Agent = None
@@ -157,6 +171,7 @@ class GroundedAgentOptions(AgentOptions):
     tools: AgentTools = None
     curator: ToolOutputCurator = field(default_factory=DataBlockCurator)
     presenter_prompt: PresenterPrompt = field(default_factory=PresenterPrompt.default)
+    ui_policy: UIPolicy = UIPolicy.FORWARD
 
 
 class GroundedAgent(Agent):
@@ -174,6 +189,7 @@ class GroundedAgent(Agent):
         self.tools = options.tools
         self.curator = options.curator
         self.presenter_prompt = options.presenter_prompt
+        self.ui_policy = options.ui_policy
 
     def is_streaming_enabled(self) -> bool:
         # The final reply is the presenter's, so streaming tracks the presenter (no-tool turns are
@@ -280,6 +296,11 @@ class GroundedAgent(Agent):
             message = ConversationMessage(role=ParticipantRole.ASSISTANT.value, content=[{"text": draft}])
             yield AgentStreamResponse(text=draft, final_message=message)
             return
+        # Forward the primary tool's widget (if any) before the presenter's text streams in.
+        if self.ui_policy == UIPolicy.FORWARD:
+            widget = Grounding.primary_ui(captured)
+            if widget is not None:
+                yield AgentStreamResponse(ui=widget)
         response = await self._present(
             input_text, user_id, session_id, chat_history, additional_params, captured
         )
