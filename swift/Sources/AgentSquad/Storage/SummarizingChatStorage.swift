@@ -90,7 +90,7 @@ public struct SummarizingChatStorage: ChatStorage {
         agentId: String,
         maxMessages: Int?
     ) async throws -> [ConversationMessage] {
-        let key = cacheKey(userId: userId, sessionId: sessionId, agentId: agentId)
+        let key = cacheKey(userId: userId, sessionId: sessionId, agentId: agentId, maxMessages: maxMessages)
 
         // Return cached compressed history if available.
         if let cached = await cache.get(key: key) {
@@ -122,7 +122,7 @@ public struct SummarizingChatStorage: ChatStorage {
         agentId: String,
         maxMessages: Int?
     ) async throws {
-        await cache.invalidate(key: cacheKey(userId: userId, sessionId: sessionId, agentId: agentId))
+        await cache.invalidate(key: cacheKey(userId: userId, sessionId: sessionId, agentId: agentId, maxMessages: maxMessages))
         try await base.save(
             message,
             userId: userId, sessionId: sessionId, agentId: agentId,
@@ -137,7 +137,7 @@ public struct SummarizingChatStorage: ChatStorage {
         agentId: String,
         maxMessages: Int?
     ) async throws {
-        await cache.invalidate(key: cacheKey(userId: userId, sessionId: sessionId, agentId: agentId))
+        await cache.invalidate(key: cacheKey(userId: userId, sessionId: sessionId, agentId: agentId, maxMessages: maxMessages))
         try await base.saveMessages(
             messages,
             userId: userId, sessionId: sessionId, agentId: agentId,
@@ -155,7 +155,7 @@ public struct SummarizingChatStorage: ChatStorage {
 
     // MARK: - Private
 
-    private func cacheKey(userId: String, sessionId: String, agentId: String) -> String {
-        "\(userId)#\(sessionId)#\(agentId)"
+    private func cacheKey(userId: String, sessionId: String, agentId: String, maxMessages: Int?) -> String {
+        "\(userId)#\(sessionId)#\(agentId)#\(maxMessages.map(String.init) ?? "nil")"
     }
 }
