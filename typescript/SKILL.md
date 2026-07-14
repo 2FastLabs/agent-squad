@@ -204,6 +204,7 @@ injected automatically.
 | `InMemoryChatStorage` | Default; non-persistent; fine for dev and tests |
 | `DynamoDbChatStorage` | Requires `@aws-sdk/client-dynamodb` and `@aws-sdk/lib-dynamodb` (hard deps) |
 | `SqlChatStorage` | Requires `@libsql/client` (hard dep); works with Turso or local libsql |
+| `SummarizingChatStorage` | Wraps any storage; compresses history via a user-supplied `ChatSummarizer` callable when `fetchChat` returns more than `triggerAt * 2` messages; cache-based save-back |
 
 Storage is keyed by `(userId, sessionId, agentId)`. `fetchAllChats(userId, sessionId)` is used by
 the classifier to get cross-agent history for context.

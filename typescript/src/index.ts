@@ -35,6 +35,8 @@ export { DakeraRetriever, DakeraRetrieverOptions } from './retrievers/DakeraRetr
 
 export { ChatStorage } from './storage/chatStorage';
 export { InMemoryChatStorage } from './storage/memoryChatStorage';
+export { SummarizingChatStorage } from './storage/summarizingChatStorage';
+export type { ChatSummarizer } from './storage/summarizingChatStorage';
 export { DynamoDbChatStorage } from './storage/dynamoDbChatStorage';
 export { SqlChatStorage } from './storage/sqlChatStorage';
 
