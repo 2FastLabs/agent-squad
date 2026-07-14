@@ -270,9 +270,31 @@ async def test_non_streaming_collect_drops_widget():
 def test_grounding_primary_ui():
     tr = _ui_tool_result()
     assert Grounding.primary_ui([CapturedToolResult("get_order", tr)]).resource_uri == "ui://shop/order-card"
-    # A plain (non-UI) primary tool yields no widget; last call wins.
-    assert Grounding.primary_ui([CapturedToolResult("a", tr), CapturedToolResult("b", "plain")]) is None
+    # A trailing non-UI tool must not hide an earlier widget (prefers the last UI call; Swift parity).
+    assert Grounding.primary_ui(
+        [CapturedToolResult("get_order", tr), CapturedToolResult("check_stock", "in stock")]
+    ).resource_uri == "ui://shop/order-card"
+    # No UI tool at all → no widget.
+    assert Grounding.primary_ui([CapturedToolResult("a", "plain"), CapturedToolResult("b", "plain")]) is None
     assert Grounding.primary_ui([]) is None
+
+
+@pytest.mark.asyncio
+async def test_widget_and_prompt_survive_a_trailing_non_ui_tool():
+    tools = _tools()
+    gatherer = _FakeGatherer(AgentOptions(name="g", description=""), tools=tools,
+                             tool_calls=[("get_order", {}, _ui_tool_result()),
+                                         ("check_stock", {}, "in stock")],
+                             draft="", streaming=True)
+    presenter = _FakePresenter(AgentOptions(name="p", description=""), reply="done", streaming=True)
+    prompt = PresenterPrompt(default="DEFAULT", per_tool={"get_order": "ORDER PROMPT"})
+    agent = _build(gatherer, presenter, tools, presenter_prompt=prompt)
+
+    chunks = [c async for c in await agent.process_request("q", "u", "s", [])]
+    widget_chunks = [c for c in chunks if c.ui is not None]
+    assert len(widget_chunks) == 1  # widget not dropped by the trailing non-UI tool
+    assert widget_chunks[0].ui.resource_uri == "ui://shop/order-card"
+    assert presenter.system_prompt == "ORDER PROMPT"  # prompt keyed off the UI tool
 
 
 # ---------------------------------------------------------------------------

@@ -106,7 +106,12 @@ class Grounding:
 
     @staticmethod
     def primary(results: list[CapturedToolResult]) -> Optional[CapturedToolResult]:
-        """The turn's primary tool: the last call (drives the presenter prompt selection)."""
+        """The turn's primary tool: the last call that advertised a UI widget, else the last call.
+        Drives both the presenter prompt and the forwarded widget, so a widget still surfaces when a
+        non-UI helper runs after the UI tool."""
+        for result in reversed(results):
+            if isinstance(result.result, ToolResult) and result.result.ui is not None:
+                return result
         return results[-1] if results else None
 
     @staticmethod
