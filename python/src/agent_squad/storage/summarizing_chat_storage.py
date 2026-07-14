@@ -86,8 +86,8 @@ class SummarizingChatStorage(ChatStorage):
         self._cache: dict[str, list[ConversationMessage]] = {}
 
     @staticmethod
-    def _cache_key(user_id: str, session_id: str, agent_id: str) -> str:
-        return f"{user_id}#{session_id}#{agent_id}"
+    def _cache_key(user_id: str, session_id: str, agent_id: str, max_history_size: Optional[int] = None) -> str:
+        return f"{user_id}#{session_id}#{agent_id}#{max_history_size}"
 
     async def save_chat_message(
         self,
@@ -98,7 +98,7 @@ class SummarizingChatStorage(ChatStorage):
         max_history_size: Optional[int] = None,
     ) -> bool:
         # Invalidate cache so the next fetch_chat re-evaluates from the inner store.
-        self._cache.pop(self._cache_key(user_id, session_id, agent_id), None)
+        self._cache.pop(self._cache_key(user_id, session_id, agent_id, max_history_size), None)
         return await self._storage.save_chat_message(
             user_id, session_id, agent_id, new_message, max_history_size
         )
@@ -112,7 +112,7 @@ class SummarizingChatStorage(ChatStorage):
         max_history_size: Optional[int] = None,
     ) -> bool:
         # Invalidate cache so the next fetch_chat re-evaluates from the inner store.
-        self._cache.pop(self._cache_key(user_id, session_id, agent_id), None)
+        self._cache.pop(self._cache_key(user_id, session_id, agent_id, max_history_size), None)
         return await self._storage.save_chat_messages(
             user_id, session_id, agent_id, new_messages, max_history_size
         )
@@ -124,7 +124,7 @@ class SummarizingChatStorage(ChatStorage):
         agent_id: str,
         max_history_size: Optional[int] = None,
     ) -> list[ConversationMessage]:
-        key = self._cache_key(user_id, session_id, agent_id)
+        key = self._cache_key(user_id, session_id, agent_id, max_history_size)
 
         # Return cached compressed history if available.
         if key in self._cache:
@@ -137,7 +137,6 @@ class SummarizingChatStorage(ChatStorage):
 
         if len(history) > self._trigger_at * 2:
             compressed = await self._summarizer(history, self._keep_last)
-            # Cache the compressed result — subsequent fetches return this directly.
             self._cache[key] = compressed
             return compressed
 
