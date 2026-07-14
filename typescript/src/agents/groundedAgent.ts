@@ -121,8 +121,16 @@ export class PresenterPrompt {
 
 /** Shared helpers for the gather -> present pattern. */
 export const Grounding = {
-  /** The turn's primary tool: the last call (drives the presenter prompt selection). */
+  /**
+   * The turn's primary tool: the last call that advertised a UI widget, else the last call (matches
+   * Swift). Drives both the presenter prompt and the forwarded widget, so a widget still surfaces
+   * when a non-UI helper runs after the UI tool.
+   */
   primary(results: CapturedToolResult[]): CapturedToolResult | undefined {
+    for (let i = results.length - 1; i >= 0; i--) {
+      const r = results[i];
+      if (r.result instanceof ToolResult && r.result.ui) return r;
+    }
     return results.length ? results[results.length - 1] : undefined;
   },
 
