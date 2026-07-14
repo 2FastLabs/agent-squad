@@ -351,13 +351,50 @@ describe("GroundedAgent", () => {
     expect(Grounding.primaryUi([{ name: "get_order", result: tr }])?.resourceUri).toBe(
       "ui://shop/order-card"
     );
+    // A trailing non-UI tool must not hide an earlier widget (prefers the last UI call; Swift parity).
     expect(
       Grounding.primaryUi([
-        { name: "a", result: tr },
+        { name: "get_order", result: tr },
+        { name: "check_stock", result: "in stock" },
+      ])?.resourceUri
+    ).toBe("ui://shop/order-card");
+    // No UI tool at all → no widget.
+    expect(
+      Grounding.primaryUi([
+        { name: "a", result: "plain" },
         { name: "b", result: "plain" },
       ])
     ).toBeUndefined();
     expect(Grounding.primaryUi([])).toBeUndefined();
+  });
+
+  it("forwards the widget and keys the prompt off the UI tool when a non-UI tool trails it", async () => {
+    // A UI tool followed by a plain non-UI helper.
+    const tools = new AgentTools([
+      new AgentTool({ name: "search_products", func: () => uiToolResult() }),
+      new AgentTool({ name: "check_stock", func: () => "in stock" }),
+    ]);
+    const gatherer = new FakeGatherer(
+      { name: "g", description: "" },
+      tools,
+      [
+        { name: "search_products", args: {} },
+        { name: "check_stock", args: {} },
+      ],
+      "",
+      true
+    );
+    const presenter = new FakePresenter({ name: "p", description: "" }, "done", true);
+    const agent = build(gatherer, presenter, tools, {
+      presenterPrompt: new PresenterPrompt("DEFAULT", { search_products: "PRODUCT PROMPT" }),
+    });
+
+    const result = await agent.processRequest("q", "u", "s", []);
+    const chunks: any[] = [];
+    for await (const chunk of result as AsyncIterable<any>) chunks.push(chunk);
+
+    expect(chunks.filter((c) => c && typeof c === "object" && c.ui)).toHaveLength(1);
+    expect(presenter.systemPrompt).toBe("PRODUCT PROMPT");
   });
 
   // --- Construction guards ---
