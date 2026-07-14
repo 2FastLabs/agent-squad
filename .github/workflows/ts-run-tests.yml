@@ -27,7 +27,7 @@ jobs:
         uses: lycheeverse/lychee-action@c053181aa0c3d17606addfe97a9075a32723548a
         with:
           fail: true
-          args: --scheme=https . --exclude-all-private --accept '999, 429, 403' --max-concurrency 1 --retry-wait-time 5 --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+          args: --scheme=https . --exclude-all-private --accept '999, 429, 403' --max-concurrency 1 --retry-wait-time 5 --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36" --exclude https://podcasts.apple.com
       - name: Install dependencies
         run: npm install
       - name: Run tests
