@@ -80,7 +80,7 @@ export class SummarizingChatStorage extends ChatStorage {
     maxHistorySize?: number
   ): Promise<ConversationMessage[]> {
     // Invalidate cache so the next fetchChat re-evaluates from the inner store.
-    this.cache.delete(this.cacheKey(userId, sessionId, agentId));
+    this.cache.delete(this.cacheKey(userId, sessionId, agentId, maxHistorySize));
     return this.storage.saveChatMessage(userId, sessionId, agentId, newMessage, maxHistorySize);
   }
 
@@ -90,7 +90,7 @@ export class SummarizingChatStorage extends ChatStorage {
     agentId: string,
     maxHistorySize?: number
   ): Promise<ConversationMessage[]> {
-    const key = this.cacheKey(userId, sessionId, agentId);
+    const key = this.cacheKey(userId, sessionId, agentId, maxHistorySize);
 
     // Return cached compressed history if available.
     const cached = this.cache.get(key);
@@ -102,7 +102,6 @@ export class SummarizingChatStorage extends ChatStorage {
 
     if (history.length > this.triggerAt * 2) {
       const compressed = await this.summarizer(history, this.keepLast);
-      // Cache the compressed result — subsequent fetches return this directly.
       this.cache.set(key, compressed);
       return compressed;
     }
@@ -118,7 +117,7 @@ export class SummarizingChatStorage extends ChatStorage {
     return this.storage.fetchAllChats(userId, sessionId);
   }
 
-  private cacheKey(userId: string, sessionId: string, agentId: string): string {
-    return `${userId}#${sessionId}#${agentId}`;
+  private cacheKey(userId: string, sessionId: string, agentId: string, maxHistorySize?: number): string {
+    return `${userId}#${sessionId}#${agentId}#${maxHistorySize ?? 'nil'}`;
   }
 }
