@@ -3,6 +3,7 @@ Storage implementations for chat history.
 """
 from .chat_storage import ChatStorage
 from .in_memory_chat_storage import InMemoryChatStorage
+from .summarizing_chat_storage import SummarizingChatStorage
 
 _AWS_AVAILABLE = False
 _SQL_AVAILABLE = False
@@ -22,6 +23,7 @@ except ImportError:
 __all__ = [
     'ChatStorage',
     'InMemoryChatStorage',
+    'SummarizingChatStorage',
 ]
 
 if _AWS_AVAILABLE:

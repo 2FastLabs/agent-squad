@@ -218,6 +218,7 @@ routing prompt via `set_system_prompt(template, variables)` where `{{AGENT_DESCR
 | `InMemoryChatStorage` | none | Default; not persistent |
 | `DynamoDbChatStorage` | `aws` | DynamoDB-backed; production default for AWS deployments |
 | `SqlChatStorage` | `sql` | libSQL/Turso-backed |
+| `SummarizingChatStorage` | none | Wraps any storage; compresses history via a user-supplied async callable when history exceeds `trigger_at` pairs |
 
 All storage classes extend `ChatStorage` (`agent_squad.storage.chat_storage`). Storage is keyed by
 `(user_id, session_id, agent_id)`. `MAX_MESSAGE_PAIRS_PER_AGENT` (default 100) trims history at
