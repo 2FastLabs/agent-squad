@@ -1,5 +1,21 @@
-import { AgentTool, AgentToolCallbacks, AgentToolResult, AgentTools } from "../utils/tool";
+import { AgentTool, AgentToolCallbacks, AgentToolResult, AgentTools, ToolResult } from "../utils/tool";
+import { UIPayload } from "../utils/ui";
 import { ConversationMessage } from "../types";
+
+/** The advertised UI template URI: `_meta.ui.resourceUri`, or the OpenAI `openai/outputTemplate` alias. */
+function uiResourceUri(meta: any): string | undefined {
+  if (!meta || typeof meta !== "object") return undefined;
+  const fromUi = meta.ui?.resourceUri;
+  if (typeof fromUi === "string") return fromUi;
+  const alias = meta["openai/outputTemplate"];
+  return typeof alias === "string" ? alias : undefined;
+}
+
+/** Whether the model may be offered the tool. `_meta.ui.visibility` lists audiences; absent → both. */
+function modelVisible(meta: any): boolean {
+  const visibility = meta?.ui?.visibility;
+  return Array.isArray(visibility) ? visibility.includes("model") : true;
+}
 
 /**
  * Configuration for a single MCP server connection.
@@ -55,6 +71,11 @@ export class MCPToolProvider extends AgentTools {
   private clients: any[] = [];
   /** Map from MCP tool name → the client that owns it */
   private toolClientMap: Map<string, any> = new Map();
+  /** Map from MCP tool name → its advertised UI resource URI (if any) */
+  private toolUiMap: Map<string, string> = new Map();
+  /** Per-client cache of fetched UI templates, keyed by resource URI */
+  private templateCache: WeakMap<object, Map<string, { mimeType: string; body: string }>> =
+    new WeakMap();
   private connected = false;
 
   constructor(servers: MCPServerConfig[], callbacks?: AgentToolCallbacks) {
@@ -176,31 +197,33 @@ export class MCPToolProvider extends AgentTools {
       const { tools: mcpTools } = await client.listTools();
 
       for (const mcpTool of mcpTools) {
-        this.toolClientMap.set(mcpTool.name, client);
+        const toolName = mcpTool.name;
+        this.toolClientMap.set(toolName, client);
+
+        const meta = mcpTool._meta;
+        const ui = uiResourceUri(meta);
+        if (ui) this.toolUiMap.set(toolName, ui);
 
         const schema = mcpTool.inputSchema ?? { type: "object", properties: {} };
         const properties: Record<string, any> = schema.properties ?? {};
         const required: string[] = schema.required ?? [];
 
-        // Build an AgentTool with a dummy func — actual execution goes through
-        // MCP via our overridden toolHandler.
+        // A real func: the gatherer invokes it through the base tool loop, which lets a UI-aware
+        // consumer (GroundedAgent) capture the ToolResult it returns — including any widget.
         const agentTool = new AgentTool({
-          name: mcpTool.name,
-          description: mcpTool.description ?? `MCP tool: ${mcpTool.name}`,
+          name: toolName,
+          description: mcpTool.description ?? `MCP tool: ${toolName}`,
           properties,
           required,
-          func: async () => {
-            // Placeholder — never called; MCPToolProvider.toolHandler handles
-            // execution directly via the MCP client.
-            return null;
-          },
+          func: async (input: any) => this.callMCPTool(toolName, input),
         });
 
         // Store the raw MCP input schema so format methods can pass it through
         // unchanged (it is already valid JSON Schema).
         (agentTool as any)._mcpInputSchema = schema;
 
-        allTools.push(agentTool);
+        // App-only tools stay callable (in toolClientMap) but are never advertised to the model.
+        if (modelVisible(meta)) allTools.push(agentTool);
       }
     }
 
@@ -275,9 +298,12 @@ export class MCPToolProvider extends AgentTools {
   // ---------------------------------------------------------------------------
 
   /**
-   * Handles tool-use blocks from the LLM response by calling the appropriate
-   * MCP server. Mirrors the {@link AgentTools#toolHandler} signature exactly
-   * so it works inside BedrockLLMAgent, AnthropicAgent, etc. without changes.
+   * Runs each tool-use block by invoking the tool's `func` (our MCP call, returning a
+   * {@link ToolResult}) with the full input, then routes only its text to the model. Calling `func`
+   * is what lets a UI-aware consumer such as `GroundedAgent` capture the widget-carrying result.
+   *
+   * We invoke `func` directly (rather than delegating to the base loop) so the tool receives its
+   * full input — the base `processTool` would unwrap a `messages` key and drop the other arguments.
    */
   override async toolHandler(
     response: any,
@@ -302,8 +328,16 @@ export class MCPToolProvider extends AgentTools {
       const toolId = getToolId(toolUseBlock);
       const inputData = getInputData(toolUseBlock);
 
-      const result = await this.callMCPTool(toolName, inputData);
-      toolResults.push(new AgentToolResult(toolId, result));
+      // Model-visible tools carry a real func (captured by GroundedAgent); app-only / unknown tools
+      // aren't advertised, so fall back to a direct MCP call.
+      const tool = this.tools.find((t) => t.name === toolName);
+      const result = tool ? await tool.func(inputData) : await this.callMCPTool(toolName, inputData);
+
+      const content =
+        result instanceof ToolResult
+          ? result.content || JSON.stringify(result.structuredContent)
+          : result;
+      toolResults.push(new AgentToolResult(toolId, content));
     }
 
     return toolResults;
@@ -313,10 +347,10 @@ export class MCPToolProvider extends AgentTools {
   // Internal helpers
   // ---------------------------------------------------------------------------
 
-  private async callMCPTool(toolName: string, inputData: any): Promise<string> {
+  private async callMCPTool(toolName: string, inputData: any): Promise<ToolResult> {
     const client = this.toolClientMap.get(toolName);
     if (!client) {
-      return `MCP tool '${toolName}' not found`;
+      return new ToolResult(`MCP tool '${toolName}' not found`);
     }
 
     try {
@@ -325,15 +359,64 @@ export class MCPToolProvider extends AgentTools {
         arguments: inputData ?? {},
       });
 
+      const text = this.extractTextFromContent(mcpResult.content);
       if (mcpResult.isError) {
-        const errorText = this.extractTextFromContent(mcpResult.content);
-        return `Error from MCP tool '${toolName}': ${errorText}`;
+        return new ToolResult(`Error from MCP tool '${toolName}': ${text}`);
       }
 
-      return this.extractTextFromContent(mcpResult.content);
+      const structured = mcpResult.structuredContent ?? {};
+      let ui: UIPayload | undefined;
+      const resourceUri = this.toolUiMap.get(toolName);
+      if (resourceUri) {
+        const template = await this.readTemplate(client, resourceUri);
+        if (template) {
+          ui = {
+            resourceUri,
+            mimeType: template.mimeType,
+            template: template.body,
+            structuredContent: structured,
+            meta: mcpResult._meta,
+          };
+        }
+      }
+      return new ToolResult(text, structured, ui);
     } catch (error: any) {
-      return `Error calling MCP tool '${toolName}': ${error?.message ?? String(error)}`;
+      return new ToolResult(
+        `Error calling MCP tool '${toolName}': ${error?.message ?? String(error)}`
+      );
     }
+  }
+
+  /** Fetch (and cache, per client) a UI template resource. A resource is text or a base64 blob. */
+  private async readTemplate(
+    client: any,
+    resourceUri: string
+  ): Promise<{ mimeType: string; body: string } | undefined> {
+    const cached = this.templateCache.get(client);
+    if (cached?.has(resourceUri)) return cached.get(resourceUri);
+
+    let template: { mimeType: string; body: string } | undefined;
+    try {
+      const res = await client.readResource({ uri: resourceUri });
+      const first = res?.contents?.[0];
+      if (first) {
+        const mimeType: string = first.mimeType ?? "text/html;profile=mcp-app";
+        let body: string | undefined = typeof first.text === "string" ? first.text : undefined;
+        if (body === undefined && typeof first.blob === "string") {
+          body = Buffer.from(first.blob, "base64").toString("utf-8");
+        }
+        if (body !== undefined) template = { mimeType, body };
+      }
+    } catch {
+      template = undefined;
+    }
+
+    if (template) {
+      const byUri = cached ?? new Map<string, { mimeType: string; body: string }>();
+      byUri.set(resourceUri, template);
+      this.templateCache.set(client, byUri);
+    }
+    return template;
   }
 
   private extractTextFromContent(content: any): string {
@@ -367,6 +450,8 @@ export class MCPToolProvider extends AgentTools {
     }
     this.clients = [];
     this.toolClientMap.clear();
+    this.toolUiMap.clear();
+    this.templateCache = new WeakMap();
     this.tools = [];
     this.connected = false;
   }

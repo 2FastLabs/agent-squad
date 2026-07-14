@@ -12,12 +12,14 @@ const mockCallTool = jest.fn();
 const mockListTools = jest.fn();
 const mockConnect = jest.fn();
 const mockClose = jest.fn();
+const mockReadResource = jest.fn();
 
 class MockClient {
   connect = mockConnect;
   listTools = mockListTools;
   callTool = mockCallTool;
   close = mockClose;
+  readResource = mockReadResource;
 }
 
 class MockStdioTransport {
@@ -37,7 +39,7 @@ jest.mock("@modelcontextprotocol/sdk/client/sse.js", () => ({ SSEClientTransport
 // ---------------------------------------------------------------------------
 
 import { MCPToolProvider, MCPServerConfig } from "../src/tools/mcpToolProvider";
-import { AgentTools, AgentToolResult } from "../src/utils/tool";
+import { AgentTools, AgentToolResult, ToolResult } from "../src/utils/tool";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -421,5 +423,157 @@ describe("MCPToolProvider", () => {
     await expect(badProvider.ensureConnected()).rejects.toThrow(
       "requires a 'url' field"
     );
+  });
+
+  // -------------------------------------------------------------------------
+  // Tool UI (widgets)
+  // -------------------------------------------------------------------------
+
+  const uiTool = (extraMeta: any = { ui: { resourceUri: "ui://shop/order-card" } }) => ({
+    name: "get_order",
+    description: "Order status",
+    inputSchema: { type: "object", properties: {}, required: [] },
+    _meta: extraMeta,
+  });
+
+  async function connectedProvider(): Promise<MCPToolProvider> {
+    const p = new MCPToolProvider([{ type: "stdio", command: "x" }]);
+    await p.ensureConnected();
+    return p;
+  }
+
+  it("returns a ToolResult with a UIPayload for a tool advertising _meta.ui", async () => {
+    mockListTools.mockResolvedValue({ tools: [uiTool()] });
+    mockCallTool.mockResolvedValue({
+      isError: false,
+      content: [{ type: "text", text: "Order 42: shipped" }],
+      structuredContent: { status: "shipped" },
+      _meta: { a: 1 },
+    });
+    mockReadResource.mockResolvedValue({
+      contents: [{ uri: "ui://shop/order-card", mimeType: "text/html;profile=mcp-app", text: "<div>card</div>" }],
+    });
+
+    const p = await connectedProvider();
+    const result: any = await p.tools.find((t) => t.name === "get_order")!.func({ orderId: "42" });
+
+    expect(result).toBeInstanceOf(ToolResult);
+    expect(result.content).toBe("Order 42: shipped"); // only text goes to the model
+    expect(result.structuredContent).toEqual({ status: "shipped" });
+    expect(result.ui.resourceUri).toBe("ui://shop/order-card");
+    expect(result.ui.mimeType).toBe("text/html;profile=mcp-app");
+    expect(result.ui.template).toBe("<div>card</div>");
+    expect(result.ui.structuredContent).toEqual({ status: "shipped" });
+    expect(result.ui.meta).toEqual({ a: 1 }); // _meta forwarded to the UI, never the model
+  });
+
+  it("falls back to the mcp-app mime type when the resource omits mimeType", async () => {
+    mockListTools.mockResolvedValue({ tools: [uiTool()] });
+    mockCallTool.mockResolvedValue({ isError: false, content: [{ type: "text", text: "ok" }], structuredContent: {} });
+    mockReadResource.mockResolvedValue({ contents: [{ text: "<div/>" }] }); // no mimeType
+
+    const p = await connectedProvider();
+    const result: any = await p.tools.find((t) => t.name === "get_order")!.func({});
+    expect(result.ui.mimeType).toBe("text/html;profile=mcp-app");
+  });
+
+  it("forwards the full input even when it contains a 'messages' key", async () => {
+    mockListTools.mockResolvedValue({
+      tools: [{ name: "chat", inputSchema: { type: "object", properties: { messages: { type: "array" } } } }],
+    });
+    mockCallTool.mockResolvedValue({ isError: false, content: [{ type: "text", text: "ok" }] });
+
+    const p = await connectedProvider();
+    const resp = makeBedrockResponse("chat", "1", { messages: [{ role: "user" }], extra: 1 });
+    await p.toolHandler(resp, bedrockGetToolUseBlock, bedrockGetToolName, bedrockGetToolId, bedrockGetInputData);
+
+    // The whole object is sent to the server — not just inputData.messages.
+    expect(mockCallTool).toHaveBeenCalledWith({
+      name: "chat",
+      arguments: { messages: [{ role: "user" }], extra: 1 },
+    });
+  });
+
+  it("handles undefined tool input without throwing", async () => {
+    mockListTools.mockResolvedValue({
+      tools: [{ name: "ping", inputSchema: { type: "object", properties: {} } }],
+    });
+    mockCallTool.mockResolvedValue({ isError: false, content: [{ type: "text", text: "pong" }] });
+
+    const p = await connectedProvider();
+    const resp = makeBedrockResponse("ping", "1", undefined);
+    const results = await p.toolHandler(
+      resp,
+      bedrockGetToolUseBlock,
+      bedrockGetToolName,
+      bedrockGetToolId,
+      bedrockGetInputData
+    );
+    expect(results[0].content).toBe("pong");
+    expect(mockCallTool).toHaveBeenCalledWith({ name: "ping", arguments: {} });
+  });
+
+  it("reads the openai/outputTemplate alias", async () => {
+    mockListTools.mockResolvedValue({ tools: [uiTool({ "openai/outputTemplate": "ui://alias" })] });
+    mockCallTool.mockResolvedValue({ isError: false, content: [{ type: "text", text: "ok" }], structuredContent: {} });
+    mockReadResource.mockResolvedValue({ contents: [{ mimeType: "text/html", text: "<b>x</b>" }] });
+
+    const p = await connectedProvider();
+    const result: any = await p.tools.find((t) => t.name === "get_order")!.func({});
+    expect(result.ui.resourceUri).toBe("ui://alias");
+  });
+
+  it("decodes a base64 blob template", async () => {
+    mockListTools.mockResolvedValue({ tools: [uiTool()] });
+    mockCallTool.mockResolvedValue({ isError: false, content: [{ type: "text", text: "ok" }], structuredContent: {} });
+    const blob = Buffer.from("<div>from blob</div>").toString("base64");
+    mockReadResource.mockResolvedValue({ contents: [{ mimeType: "text/html", blob }] });
+
+    const p = await connectedProvider();
+    const result: any = await p.tools.find((t) => t.name === "get_order")!.func({});
+    expect(result.ui.template).toBe("<div>from blob</div>");
+  });
+
+  it("degrades to text when the UI resource fetch fails", async () => {
+    mockListTools.mockResolvedValue({ tools: [uiTool()] });
+    mockCallTool.mockResolvedValue({
+      isError: false,
+      content: [{ type: "text", text: "Order: shipped" }],
+      structuredContent: { s: 1 },
+    });
+    mockReadResource.mockRejectedValue(new Error("read failed"));
+
+    const p = await connectedProvider();
+    const result: any = await p.tools.find((t) => t.name === "get_order")!.func({});
+    expect(result.ui).toBeUndefined();
+    expect(result.content).toBe("Order: shipped");
+    expect(result.structuredContent).toEqual({ s: 1 });
+  });
+
+  it("fetches the UI template once (cached per client)", async () => {
+    mockListTools.mockResolvedValue({ tools: [uiTool()] });
+    mockCallTool.mockResolvedValue({ isError: false, content: [{ type: "text", text: "ok" }], structuredContent: {} });
+    mockReadResource.mockResolvedValue({ contents: [{ mimeType: "text/html", text: "<div/>" }] });
+
+    const p = await connectedProvider();
+    const tool = p.tools.find((t) => t.name === "get_order")!;
+    await tool.func({});
+    await tool.func({});
+    expect(mockReadResource).toHaveBeenCalledTimes(1);
+  });
+
+  it("hides app-only tools from the model but keeps them connected", async () => {
+    const appOnly = {
+      name: "refresh_order",
+      inputSchema: { type: "object", properties: {} },
+      _meta: { ui: { visibility: ["app"] } },
+    };
+    mockListTools.mockResolvedValue({ tools: [uiTool(), appOnly] });
+
+    const p = await connectedProvider();
+    // Only the model-visible tool is advertised...
+    expect(p.tools.map((t) => t.name)).toEqual(["get_order"]);
+    const bedrock = await p.toBedrockFormat();
+    expect(bedrock.map((r: any) => r.toolSpec.name)).toEqual(["get_order"]);
   });
 });
