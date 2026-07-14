@@ -330,8 +330,12 @@ export class MCPToolProvider extends AgentTools {
 
       // Model-visible tools carry a real func (captured by GroundedAgent); app-only / unknown tools
       // aren't advertised, so fall back to a direct MCP call.
+      // Only model-visible tools (in this.tools) are executable via the model loop. An app-only or
+      // unknown name is rejected here — an app-only MCP tool must never be invocable by the model.
       const tool = this.tools.find((t) => t.name === toolName);
-      const result = tool ? await tool.func(inputData) : await this.callMCPTool(toolName, inputData);
+      const result = tool
+        ? await tool.func(inputData)
+        : new ToolResult(`MCP tool '${toolName}' not found`);
 
       const content =
         result instanceof ToolResult

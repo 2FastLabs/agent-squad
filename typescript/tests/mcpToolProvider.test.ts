@@ -629,4 +629,27 @@ describe("MCPToolProvider", () => {
     const bedrock = await p.toBedrockFormat();
     expect(bedrock.map((r: any) => r.toolSpec.name)).toEqual(["get_order"]);
   });
+
+  it("rejects a model call to an app-only tool instead of executing it", async () => {
+    const appOnly = {
+      name: "refresh_order",
+      inputSchema: { type: "object", properties: {} },
+      _meta: { ui: { visibility: ["app"] } },
+    };
+    mockListTools.mockResolvedValue({ tools: [uiTool(), appOnly] });
+    mockCallTool.mockResolvedValue({ isError: false, content: [{ type: "text", text: "should not run" }] });
+
+    const p = await connectedProvider();
+    const resp = makeBedrockResponse("refresh_order", "1", {});
+    const results = await p.toolHandler(
+      resp,
+      bedrockGetToolUseBlock,
+      bedrockGetToolName,
+      bedrockGetToolId,
+      bedrockGetInputData
+    );
+
+    expect(results[0].content).toContain("not found"); // the model can't tell it exists
+    expect(mockCallTool).not.toHaveBeenCalled(); // and it was NOT executed via the model loop
+  });
 });
