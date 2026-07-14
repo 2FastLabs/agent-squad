@@ -1,0 +1,8 @@
+# Xcode user state — never commit
+xcuserdata/
+*.xcuserstate
+DerivedData/
+.DS_Store
+
+# Resolved package pins are machine-local for a local package reference
+ChatGPTStyleChat.xcodeproj/project.xcworkspace/
