@@ -40,6 +40,9 @@ jest.mock("@modelcontextprotocol/sdk/client/sse.js", () => ({ SSEClientTransport
 
 import { MCPToolProvider, MCPServerConfig } from "../src/tools/mcpToolProvider";
 import { AgentTools, AgentToolResult, ToolResult } from "../src/utils/tool";
+import { GroundedAgent } from "../src/agents/groundedAgent";
+import { Agent, AgentOptions } from "../src/agents/agent";
+import { ConversationMessage, ParticipantRole } from "../src/types";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -85,6 +88,33 @@ const bedrockGetToolUseBlock = (block: any) => block.toolUse ?? null;
 const bedrockGetToolName = (b: any) => b.name;
 const bedrockGetToolId = (b: any) => b.toolUseId;
 const bedrockGetInputData = (b: any) => b.input;
+
+// A gatherer that drives an MCP tool the way a real agent does — through the provider's
+// toolHandler (the old code bypassed each tool's func here, so GroundedAgent captured nothing).
+class McpFakeGatherer extends Agent {
+  constructor(options: AgentOptions, private readonly provider: MCPToolProvider) {
+    super(options);
+  }
+  async processRequest(): Promise<ConversationMessage> {
+    await this.provider.toolHandler(
+      makeBedrockResponse("get_order", "1", { orderId: "42" }),
+      bedrockGetToolUseBlock,
+      bedrockGetToolName,
+      bedrockGetToolId,
+      bedrockGetInputData
+    );
+    return { role: ParticipantRole.ASSISTANT, content: [{ text: "" }] };
+  }
+}
+
+class McpFakePresenter extends Agent {
+  receivedInput?: string;
+  setSystemPrompt(_template?: string): void {}
+  async processRequest(input: string): Promise<ConversationMessage> {
+    this.receivedInput = input;
+    return { role: ParticipantRole.ASSISTANT, content: [{ text: "presented" }] };
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -560,6 +590,29 @@ describe("MCPToolProvider", () => {
     await tool.func({});
     await tool.func({});
     expect(mockReadResource).toHaveBeenCalledTimes(1);
+  });
+
+  it("GroundedAgent captures an MCP tool result (regression: MCP grounding was silently skipped)", async () => {
+    mockListTools.mockResolvedValue({ tools: [uiTool()] });
+    mockCallTool.mockResolvedValue({
+      isError: false,
+      content: [{ type: "text", text: "Order 42: shipped" }],
+      structuredContent: { status: "shipped" },
+    });
+    mockReadResource.mockResolvedValue({ contents: [{ mimeType: "text/html", text: "<div/>" }] });
+
+    const provider = await connectedProvider();
+    const gatherer = new McpFakeGatherer({ name: "g", description: "" }, provider);
+    const presenter = new McpFakePresenter({ name: "p", description: "" });
+    const agent = new GroundedAgent({ name: "Shop", description: "", gatherer, presenter, tools: provider });
+
+    const result: any = await agent.processRequest("where is my order?", "u", "s", []);
+
+    // The presenter ran on the captured MCP facts. Before the fix the tool call was never captured,
+    // so GroundedAgent saw no tools, skipped the presenter, and returned the gatherer's empty draft.
+    expect(presenter.receivedInput).toContain("get_order");
+    expect(presenter.receivedInput).toContain("shipped");
+    expect(result.content[0].text).toBe("presented");
   });
 
   it("hides app-only tools from the model but keeps them connected", async () => {
