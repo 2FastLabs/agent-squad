@@ -18,12 +18,16 @@ the served `ui://` resource is only a stub — but it must exist, because the cl
 advertised resource when a tool advertises one.
 """
 
+import os
+
 from mcp.server.fastmcp import FastMCP
 from pydantic import BaseModel
 
 ORDER_CARD_URI = "ui://shop/order-card"
 
-mcp = FastMCP("shop", host="127.0.0.1", port=8000)
+# Loopback by default (Simulator reaches it). For a physical device, bind to the LAN with
+# `HOST=0.0.0.0 python shop_server.py` and point the app at your Mac's LAN IP.
+mcp = FastMCP("shop", host=os.environ.get("HOST", "127.0.0.1"), port=int(os.environ.get("PORT", "8000")))
 
 
 class Order(BaseModel):

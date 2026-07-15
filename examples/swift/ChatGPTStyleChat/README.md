@@ -60,7 +60,8 @@ static let mcpServerURL: String? = "http://127.0.0.1:8000/mcp"   // nil = native
 A runnable server is included at [`examples/mcp-shop-server`](../../mcp-shop-server) — it exposes the
 same `get_order` / `refresh_order` tools and advertises the same `ui://shop/order-card` widget, so
 the native `OrderCardView` renders identically. Start it with `python shop_server.py`, set the URL
-above, and run. On the Simulator `127.0.0.1` reaches your Mac; on a device use your Mac's LAN IP.
+above, and run. On the Simulator `127.0.0.1` reaches your Mac; for a physical device start the server
+with `HOST=0.0.0.0 python shop_server.py` and use your Mac's LAN IP in the URL.
 
 ## How it maps to the article
 

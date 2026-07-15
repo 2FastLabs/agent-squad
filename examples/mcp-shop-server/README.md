@@ -12,7 +12,8 @@ tool's data — no HTML, no web view.
 
 ```bash
 pip install -r requirements.txt
-python shop_server.py          # serves on http://127.0.0.1:8000/mcp
+python shop_server.py                   # serves on http://127.0.0.1:8000/mcp (loopback)
+HOST=0.0.0.0 python shop_server.py      # bind to the LAN, for a physical device
 ```
 
 ## Point the app at it
@@ -24,7 +25,8 @@ static let mcpServerURL: String? = "http://127.0.0.1:8000/mcp"
 ```
 
 Leave it `nil` to use the app's native `ShopToolProvider` instead. On the iOS Simulator,
-`127.0.0.1` reaches your Mac; on a device, use your Mac's LAN IP.
+`127.0.0.1` reaches your Mac. For a physical device, start the server with `HOST=0.0.0.0` (see
+above) and use your Mac's LAN IP in the URL.
 
 ## Tools
 

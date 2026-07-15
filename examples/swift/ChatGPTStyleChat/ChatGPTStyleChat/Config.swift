@@ -12,6 +12,7 @@ enum Config {
 
     /// When set, tools come from a remote MCP server (streamable HTTP) instead of the in-app
     /// `ShopToolProvider` — e.g. the sample at `examples/mcp-shop-server`. Nil = native provider.
-    /// On the iOS Simulator `127.0.0.1` reaches your Mac; on a device use your Mac's LAN IP.
+    /// The Simulator reaches your Mac at `127.0.0.1`; for a physical device, start the server with
+    /// `HOST=0.0.0.0` and use your Mac's LAN IP here.
     static let mcpServerURL: String? = nil   // "http://127.0.0.1:8000/mcp"
 }
