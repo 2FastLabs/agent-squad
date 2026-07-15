@@ -54,7 +54,7 @@
          <EnvironmentVariable
             key = "OPENAI_API_KEY"
             value = "YOUR_OPENAI_API_KEY"
-            isEnabled = "YES">
+            isEnabled = "NO">
          </EnvironmentVariable>
       </EnvironmentVariables>
    </LaunchAction>
