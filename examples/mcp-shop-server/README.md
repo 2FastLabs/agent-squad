@@ -11,6 +11,9 @@ tool's data — no HTML, no web view.
 ## Run it
 
 ```bash
+# Optional: Set up a virtual environment
+python -m venv venv
+source venv/bin/activate  # On Windows use `venv\Scripts\activate`
 pip install -r requirements.txt
 python shop_server.py                   # serves on http://127.0.0.1:8000/mcp (loopback)
 HOST=0.0.0.0 python shop_server.py      # bind to the LAN, for a physical device

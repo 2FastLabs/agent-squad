@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 77;
+	objectVersion = 70;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -11,8 +11,12 @@
 		A100000000000000000000BB /* AgentSquadMCP in Frameworks */ = {isa = PBXBuildFile; productRef = A100000000000000000000BA /* AgentSquadMCP */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXFileReference section */
+		A100000000000000000000AC /* ChatGPTStyleChat.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ChatGPTStyleChat.app; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		A100000000000000000000A6 /* ChatGPTStyleChat */ = {isa = PBXFileSystemSynchronizedRootGroup; path = ChatGPTStyleChat; sourceTree = "<group>"; };
+		A100000000000000000000A6 /* ChatGPTStyleChat */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = ChatGPTStyleChat; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -39,7 +43,7 @@
 		A100000000000000000000A3 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				A100000000000000000000A5 /* ChatGPTStyleChat.app */,
+				A100000000000000000000AC /* ChatGPTStyleChat.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -68,7 +72,7 @@
 				A100000000000000000000BA /* AgentSquadMCP */,
 			);
 			productName = ChatGPTStyleChat;
-			productReference = A100000000000000000000A5 /* ChatGPTStyleChat.app */;
+			productReference = A100000000000000000000AC /* ChatGPTStyleChat.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -79,7 +83,7 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 2600;
-				LastUpgradeCheck = 2600;
+				LastUpgradeCheck = 2660;
 				TargetAttributes = {
 					A100000000000000000000A4 = {
 						CreatedOnToolsVersion = 26.0;
@@ -99,7 +103,6 @@
 			packageReferences = (
 				A100000000000000000000B7 /* XCLocalSwiftPackageReference "../../.." */,
 			);
-			preferredProjectObjectVersion = 77;
 			productRefGroup = A100000000000000000000A3 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -165,6 +168,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = 3S2T8KU6X4;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
@@ -188,6 +192,7 @@
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 			};
@@ -228,6 +233,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = 3S2T8KU6X4;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
@@ -244,6 +250,7 @@
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				VALIDATE_PRODUCT = YES;
 			};

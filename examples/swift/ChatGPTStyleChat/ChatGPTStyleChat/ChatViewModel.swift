@@ -47,6 +47,9 @@ final class ChatViewModel: ObservableObject {
             - Use the chat history to resolve follow-ups.
             - Never invent values. If a tool returns nothing, say so.
             - Do NOT address the user or format anything — the presenter does that.
+            - If the question is unrelated to orders or shopping (e.g. jokes, weather, general chat),
+              do NOT call any tool. Reply with a short sentence explaining you cannot respond to
+              this query as it is outside your scope as a shopping assistant.
             """
 
         let presenterPrompt = PresenterPrompt(
