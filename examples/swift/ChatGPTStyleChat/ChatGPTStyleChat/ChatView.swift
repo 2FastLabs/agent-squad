@@ -32,7 +32,7 @@ struct ChatView: View {
                     .foregroundStyle(.secondary)
                 Toggle("", isOn: $vm.showWidgets)
                     .labelsHidden()
-                    .tint(.indigo)
+                    .tint(Color(red: 0.0, green: 0.48, blue: 1.0))
             }
         }
         .padding(.horizontal, 20)
@@ -87,7 +87,7 @@ struct ChatView: View {
                 Image(systemName: "arrow.up.circle.fill")
                     .font(.system(size: 32))
                     .foregroundStyle(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                                     ? Color(uiColor: .tertiaryLabel) : .indigo)
+                                     ? Color(uiColor: .tertiaryLabel) : Color(red: 0.0, green: 0.48, blue: 1.0))
             }
             .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             .animation(.easeInOut(duration: 0.15), value: draft.isEmpty)
@@ -127,9 +127,7 @@ private struct MessageRow: View {
                     .padding(.vertical, 10)
                     .background(
                         item.isUser
-                            ? AnyShapeStyle(LinearGradient(
-                                colors: [Color.indigo, Color.purple.opacity(0.85)],
-                                startPoint: .topLeading, endPoint: .bottomTrailing))
+                            ? AnyShapeStyle(Color(red: 0.0, green: 0.48, blue: 1.0))
                             : AnyShapeStyle(Color(uiColor: .secondarySystemBackground))
                     )
                     .clipShape(BubbleShape(isUser: item.isUser))
