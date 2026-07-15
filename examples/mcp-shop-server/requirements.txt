@@ -1,0 +1,2 @@
+# Tested with mcp 1.28.1. `meta=` on @mcp.tool and structured_output need a recent build.
+mcp>=1.28.0

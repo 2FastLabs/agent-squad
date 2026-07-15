@@ -1,5 +1,6 @@
 import SwiftUI
 import AgentSquad
+import AgentSquadMCP
 
 struct ChatItem: Identifiable {
     let id = UUID()
@@ -17,13 +18,22 @@ final class ChatViewModel: ObservableObject {
 
     private let withWidgets: Orchestrator    // GroundedAgent with ui: .forward
     private let textOnly: Orchestrator       // GroundedAgent with ui: .suppress
-    private let shopProvider = ShopToolProvider()
+    private let toolProvider: any ToolProvider
 
     init() {
         let key       = Config.openAIKey
         let brain     = ChatCompletionsClient(model: "gpt-4o", apiKey: key)       // fetches
         let presenter = ChatCompletionsClient(model: "gpt-4o-mini", apiKey: key)  // talks
-        let provider  = shopProvider
+
+        // Native in-app tools by default; a remote MCP server when Config.mcpServerURL is set.
+        // Either way it's just a ToolProvider — the GroundedAgent doesn't care where tools live.
+        let provider: any ToolProvider
+        if let mcpURL = Config.mcpServerURL {
+            provider = MCPServer(url: mcpURL)   // streamable HTTP; connects lazily on first use
+        } else {
+            provider = ShopToolProvider()
+        }
+        toolProvider = provider
 
         let gathererPrompt = """
             You are the data brain of a shopping assistant.
@@ -101,7 +111,7 @@ final class ChatViewModel: ObservableObject {
     func handleWidgetTool(_ name: String, arguments: JSONValue, for itemID: UUID) {
         Task {
             guard let index = items.firstIndex(where: { $0.id == itemID }) else { return }
-            if let payload = try? await shopProvider.call(name, arguments: arguments).ui {
+            if let payload = try? await toolProvider.call(name, arguments: arguments).ui {
                 items[index].widget = payload
             }
         }

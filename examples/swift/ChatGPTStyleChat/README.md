@@ -47,12 +47,27 @@ framework.
   was never involved — the widget called the `.app`-only `refresh_order` tool directly.
 - Flip the **Widgets** toggle off and ask again → the *same* grounded answer, as text only.
 
+## Tools from a remote MCP server (optional)
+
+By default the tools are native, in-app Swift code (`ShopToolProvider`). The same chat works
+unchanged against a remote **MCP server** — the GroundedAgent doesn't care where tools live. Set the
+toggle in `Config.swift`:
+
+```swift
+static let mcpServerURL: String? = "http://127.0.0.1:8000/mcp"   // nil = native ShopToolProvider
+```
+
+A runnable server is included at [`examples/mcp-shop-server`](../../mcp-shop-server) — it exposes the
+same `get_order` / `refresh_order` tools and advertises the same `ui://shop/order-card` widget, so
+the native `OrderCardView` renders identically. Start it with `python shop_server.py`, set the URL
+above, and run. On the Simulator `127.0.0.1` reaches your Mac; on a device use your Mac's LAN IP.
+
 ## How it maps to the article
 
 | File | Article section |
 |------|-----------------|
 | `ChatGPTStyleChatApp.swift` | the `@main` entry point |
-| `Config.swift` | the API key plumbing (Prerequisites) |
+| `Config.swift` | the API key plumbing (Prerequisites) + the optional `mcpServerURL` toggle |
 | `ShopToolProvider.swift` | **Step 3** — a tool that returns a widget (`get_order`) + an `.app`-only tool (`refresh_order`) |
 | `OrderCardView.swift` | **Step 6** — the native SwiftUI widget for `ui://shop/order-card`, hydrated from `structuredContent` |
 | `ChatViewModel.swift` | **Step 2 & 4** — the GroundedAgent, prompts, and the `.forward`/`.suppress` toggle; the widget→app callback |

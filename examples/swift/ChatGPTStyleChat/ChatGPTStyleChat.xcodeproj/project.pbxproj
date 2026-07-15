@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		A100000000000000000000B9 /* AgentSquad in Frameworks */ = {isa = PBXBuildFile; productRef = A100000000000000000000B8 /* AgentSquad */; };
+		A100000000000000000000BB /* AgentSquadMCP in Frameworks */ = {isa = PBXBuildFile; productRef = A100000000000000000000BA /* AgentSquadMCP */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -20,6 +21,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A100000000000000000000B9 /* AgentSquad in Frameworks */,
+				A100000000000000000000BB /* AgentSquadMCP in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -63,6 +65,7 @@
 			name = ChatGPTStyleChat;
 			packageProductDependencies = (
 				A100000000000000000000B8 /* AgentSquad */,
+				A100000000000000000000BA /* AgentSquadMCP */,
 			);
 			productName = ChatGPTStyleChat;
 			productReference = A100000000000000000000A5 /* ChatGPTStyleChat.app */;
@@ -336,6 +339,10 @@
 		A100000000000000000000B8 /* AgentSquad */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = AgentSquad;
+		};
+		A100000000000000000000BA /* AgentSquadMCP */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = AgentSquadMCP;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
