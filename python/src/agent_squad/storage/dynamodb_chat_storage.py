@@ -1,4 +1,5 @@
 from typing import Union, Optional
+import json
 import time
 import boto3
 from agent_squad.storage import ChatStorage
@@ -13,14 +14,48 @@ class DynamoDbChatStorage(ChatStorage):
                  table_name: str,
                  region: str,
                  ttl_key: Optional[str] = None,
-                 ttl_duration: int = 3600):
+                 ttl_duration: int = 3600,
+                 content_filters: Optional[list[tuple[str, str]]] = None):
         super().__init__()
         self.table_name = table_name
         self.ttl_key = ttl_key
         self.ttl_duration = int(ttl_duration)
+        self.content_filters = content_filters or []
         self.dynamodb = boto3.resource('dynamodb', region_name=region)
         self.table = self.dynamodb.Table(table_name)
         user_agent.register_feature_to_resource(self.dynamodb, feature='storage-ddb')
+
+    def _apply_content_filters(self, content: list) -> list:
+        if not self.content_filters:
+            return content
+        serialized = json.dumps(content)
+        for original, placeholder in self.content_filters:
+            serialized = serialized.replace(original, placeholder)
+        return json.loads(serialized)
+
+    def _reverse_content_filters(self, content: list) -> list:
+        if not self.content_filters:
+            return content
+        serialized = json.dumps(content)
+        for original, placeholder in self.content_filters:
+            serialized = serialized.replace(placeholder, original)
+        return json.loads(serialized)
+
+    async def _fetch_raw(
+        self,
+        user_id: str,
+        session_id: str,
+        agent_id: str
+    ) -> list[TimestampedMessage]:
+        key = self._generate_key(user_id, session_id, agent_id)
+        try:
+            response = self.table.get_item(Key={'PK': user_id, 'SK': key})
+            return self._dict_to_conversation(
+                response.get('Item', {}).get('conversation', [])
+            )
+        except Exception as error:
+            Logger.error(f"Error getting conversation from DynamoDB: {str(error)}")
+            raise error
 
     async def save_chat_message(
         self,
@@ -31,7 +66,7 @@ class DynamoDbChatStorage(ChatStorage):
         max_history_size: Optional[int] = None
     ) -> list[ConversationMessage]:
         key = self._generate_key(user_id, session_id, agent_id)
-        existing_conversation = await self.fetch_chat_with_timestamp(user_id, session_id, agent_id)
+        existing_conversation = await self._fetch_raw(user_id, session_id, agent_id)
 
         if self.is_same_role_as_last_message(existing_conversation, new_message):
             Logger.debug(f"> Consecutive {new_message.role} \
@@ -41,7 +76,12 @@ class DynamoDbChatStorage(ChatStorage):
         if isinstance(new_message, ConversationMessage):
             new_message = TimestampedMessage(
                 role=new_message.role,
-                content=new_message.content)
+                content=self._apply_content_filters(new_message.content))
+        elif self.content_filters:
+            new_message = TimestampedMessage(
+                role=new_message.role,
+                content=self._apply_content_filters(new_message.content),
+                timestamp=new_message.timestamp)
 
         existing_conversation.append(new_message)
 
@@ -65,7 +105,10 @@ class DynamoDbChatStorage(ChatStorage):
             Logger.error(f"Error saving conversation to DynamoDB:{str(error)}")
             raise error
 
-        return self._remove_timestamps(trimmed_conversation)
+        return [ConversationMessage(
+            role=msg.role,
+            content=self._reverse_content_filters(msg.content)
+        ) for msg in trimmed_conversation]
 
     async def save_chat_messages(self,
         user_id: str,
@@ -79,7 +122,7 @@ class DynamoDbChatStorage(ChatStorage):
         Save multiple messages at once
         """
         key = self._generate_key(user_id, session_id, agent_id)
-        existing_conversation = await self.fetch_chat_with_timestamp(user_id, session_id, agent_id)
+        existing_conversation = await self._fetch_raw(user_id, session_id, agent_id)
 
         #TODO: check messages are consecutive
         # if self.is_same_role_as_last_message(existing_conversation, new_messages):
@@ -91,7 +134,15 @@ class DynamoDbChatStorage(ChatStorage):
             new_messages = [
                 TimestampedMessage(
                     role=new_message.role,
-                    content=new_message.content
+                    content=self._apply_content_filters(new_message.content)
+                )
+             for new_message in new_messages]
+        elif self.content_filters:
+            new_messages = [
+                TimestampedMessage(
+                    role=new_message.role,
+                    content=self._apply_content_filters(new_message.content),
+                    timestamp=new_message.timestamp
                 )
              for new_message in new_messages]
 
@@ -117,7 +168,10 @@ class DynamoDbChatStorage(ChatStorage):
             Logger.error(f"Error saving conversation to DynamoDB:{str(error)}")
             raise error
 
-        return self._remove_timestamps(trimmed_conversation)
+        return [ConversationMessage(
+            role=msg.role,
+            content=self._reverse_content_filters(msg.content)
+        ) for msg in trimmed_conversation]
 
     async def fetch_chat(
         self,
@@ -125,13 +179,12 @@ class DynamoDbChatStorage(ChatStorage):
         session_id: str,
         agent_id: str
     ) -> list[ConversationMessage]:
-        key = self._generate_key(user_id, session_id, agent_id)
         try:
-            response = self.table.get_item(Key={'PK': user_id, 'SK': key})
-            stored_messages: list[TimestampedMessage] = self._dict_to_conversation(
-                response.get('Item', {}).get('conversation', [])
-            )
-            return self._remove_timestamps(stored_messages)
+            stored_messages = await self._fetch_raw(user_id, session_id, agent_id)
+            return [ConversationMessage(
+                role=msg.role,
+                content=self._reverse_content_filters(msg.content)
+            ) for msg in stored_messages]
         except Exception as error:
             Logger.error(f"Error getting conversation from DynamoDB:{str(error)}")
             raise error
@@ -142,13 +195,15 @@ class DynamoDbChatStorage(ChatStorage):
         session_id: str,
         agent_id: str
     ) -> list[TimestampedMessage]:
-        key = self._generate_key(user_id, session_id, agent_id)
         try:
-            response = self.table.get_item(Key={'PK': user_id, 'SK': key})
-            stored_messages: list[TimestampedMessage] = self._dict_to_conversation(
-                response.get('Item', {}).get('conversation', [])
-            )
-            return stored_messages
+            stored_messages = await self._fetch_raw(user_id, session_id, agent_id)
+            if not self.content_filters:
+                return stored_messages
+            return [TimestampedMessage(
+                role=msg.role,
+                content=self._reverse_content_filters(msg.content),
+                timestamp=msg.timestamp
+            ) for msg in stored_messages]
         except Exception as error:
             Logger.error(f"Error getting conversation from DynamoDB: {str(error)}")
             raise error
@@ -174,7 +229,8 @@ class DynamoDbChatStorage(ChatStorage):
 
                 agent_id = item['SK'].split('#')[1]
                 for msg in item['conversation']:
-                    content = msg['content']
+                    content = self._reverse_content_filters(msg['content']) \
+                        if isinstance(msg['content'], list) else msg['content']
                     if msg['role'] == ParticipantRole.ASSISTANT.value:
                         text = content[0]['text'] if isinstance(content, list) else content
                         content = [{'text': f"[{agent_id}] {text}"}]
