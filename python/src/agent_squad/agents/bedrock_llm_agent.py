@@ -391,8 +391,8 @@ class BedrockLLMAgent(Agent):
                 if isinstance(item, dict) and "text" in item:
                     content.append(item)
 
-            toolInUse=True
-            # Go through response content and save text items
+            toolInUse = False
+            # Go through response content and save toolUse items
             for item in response_content:
                 if isinstance(item, dict) and "toolUse" in item:
                     content.append(item)
@@ -402,7 +402,7 @@ class BedrockLLMAgent(Agent):
             if toolInUse:
                 if thinking_content:
                     content.insert(0,{"reasoningContent": thinking_content})
-            else:
+            elif thinking_content:
                 content.append({"reasoningContent": thinking_content})
 
             kwargs = {
@@ -524,8 +524,8 @@ class BedrockLLMAgent(Agent):
                 if isinstance(item, dict) and "text" in item:
                     _content.append(item)
 
-            toolInUse=True
-            # Go through response content and save text items
+            toolInUse = False
+            # Go through response content and save toolUse items
             for item in response_content:
                 if isinstance(item, dict) and "toolUse" in item:
                     _content.append(item)
@@ -535,7 +535,7 @@ class BedrockLLMAgent(Agent):
             if toolInUse:
                 if accumulated_thinking:
                     _content.insert(0,{"reasoningContent": {"reasoningText": {"text": accumulated_thinking, "signature":thinking_signature}}})
-            else:
+            elif accumulated_thinking:
                 _content.append({"reasoningContent": {"reasoningText": {"text": accumulated_thinking, "signature":thinking_signature}}})
 
 
