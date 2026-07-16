@@ -5,3 +5,4 @@ import sys
 # import your demo here
 sys.path.insert(1, './movie-production')
 sys.path.insert(1, './travel-planner')
+sys.path.insert(1, './chat-demo')
