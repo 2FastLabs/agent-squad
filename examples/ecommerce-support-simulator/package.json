@@ -28,7 +28,7 @@
     "@aws-sdk/client-ssm": "^3.658.1",
     "@aws-sdk/credential-provider-node": "^3.662.0",
     "@aws-sdk/signature-v4": "^3.374.0",
-    "aws-cdk-lib": "2.195.0",
+    "aws-cdk-lib": "2.262.0",
     "axios": "^1.13.5",
     "constructs": "^10.0.0",
     "esbuild": "^0.24.0",
