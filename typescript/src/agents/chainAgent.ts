@@ -84,9 +84,12 @@ export class ChainAgent extends Agent {
           Logger.logger.error(`Expected non-streaming response from intermediate agent ${agent.name}`);
           return this.createDefaultResponse();
         }
-      } catch (error) {
-        Logger.logger.error(`Error processing request with agent ${agent.name}:`, error);
-        throw `Error processing request with agent ${agent.name}:${String(error)}`;
+      } catch (error: unknown) {
+        const errorMessage = error instanceof Error
+          ? error.message
+          : String(error);
+        Logger.logger.error(`Error processing request with agent ${agent.name}:`, errorMessage);
+        throw new Error(`Error processing request with agent ${agent.name}: ${errorMessage}`);
       }
     }
 

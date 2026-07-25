@@ -109,7 +109,7 @@ describe('ChainAgent', () => {
 
       const chain = new ChainAgent({ ...defaultOptions, agents: [errorAgent] });
       await expect(chain.processRequest('input', userId, sessionId, chatHistory))
-        .rejects.toMatch(/Error processing request with agent ErrorAgent/);
+        .rejects.toThrow(/Error processing request with agent ErrorAgent/);
     });
 
     it('allows the last agent to return a streaming response', async () => {
