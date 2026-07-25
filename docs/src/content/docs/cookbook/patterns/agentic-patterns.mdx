@@ -74,7 +74,7 @@ The foundational pattern: a classifier receives the user's message, identifies t
         model_id="anthropic.claude-3-5-sonnet-20241022-v2:0"
     )))
 
-    response, _ = await orchestrator.route_request(
+    response = await orchestrator.route_request(
         "I can't log into my account",
         "user-123",
         "session-abc"
@@ -118,6 +118,9 @@ A `SupervisorAgent` acts as the entry point. It coordinates a **team** of specia
       modelId: "anthropic.claude-3-5-sonnet-20241022-v2:0"
     });
 
+    // Note: name/description are required by AgentOptions but are actually
+    // ignored at runtime — SupervisorAgent always overwrites them with
+    // leadAgent.name / leadAgent.description ("Travel Coordinator" here).
     const supervisor = new SupervisorAgent({
       name: "Travel Supervisor",
       description: "End-to-end travel planning assistant",
@@ -159,6 +162,9 @@ A `SupervisorAgent` acts as the entry point. It coordinates a **team** of specia
         model_id="anthropic.claude-3-5-sonnet-20241022-v2:0"
     ))
 
+    # Note: name/description are required fields but are actually ignored
+    # at runtime — SupervisorAgent always overwrites them with
+    # lead_agent.name / lead_agent.description ("Travel Coordinator" here).
     supervisor = SupervisorAgent(SupervisorAgentOptions(
         name="Travel Supervisor",
         description="End-to-end travel planning assistant",
@@ -269,10 +275,13 @@ Combine an agent with a retriever to ground responses in your own documents or k
       BedrockLLMAgent,
       AmazonKnowledgeBasesRetriever
     } from 'agent-squad';
+    import { BedrockAgentRuntimeClient } from '@aws-sdk/client-bedrock-agent-runtime';
 
-    const retriever = new AmazonKnowledgeBasesRetriever({
+    const client = new BedrockAgentRuntimeClient({ region: "us-east-1" });
+
+    const retriever = new AmazonKnowledgeBasesRetriever(client, {
       knowledgeBaseId: "YOUR_KB_ID",
-      retrievalConfig: { vectorSearchConfiguration: { numberOfResults: 5 } }
+      retrievalConfiguration: { vectorSearchConfiguration: { numberOfResults: 5 } }
     });
 
     const knowledgeAgent = new BedrockLLMAgent({
@@ -290,11 +299,11 @@ Combine an agent with a retriever to ground responses in your own documents or k
     ```python
     from agent_squad.orchestrator import AgentSquad, AgentSquadConfig
     from agent_squad.agents import BedrockLLMAgent, BedrockLLMAgentOptions
-    from agent_squad.retrievers import AmazonKnowledgeBasesRetriever, AmazonKnowledgeBasesRetrieverConfig
+    from agent_squad.retrievers import AmazonKnowledgeBasesRetriever, AmazonKnowledgeBasesRetrieverOptions
 
-    retriever = AmazonKnowledgeBasesRetriever(AmazonKnowledgeBasesRetrieverConfig(
+    retriever = AmazonKnowledgeBasesRetriever(AmazonKnowledgeBasesRetrieverOptions(
         knowledge_base_id="YOUR_KB_ID",
-        retrieval_config={"vectorSearchConfiguration": {"numberOfResults": 5}}
+        retrievalConfiguration={"vectorSearchConfiguration": {"numberOfResults": 5}}
     ))
 
     knowledge_agent = BedrockLLMAgent(BedrockLLMAgentOptions(
