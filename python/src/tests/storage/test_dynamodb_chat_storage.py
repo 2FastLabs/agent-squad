@@ -250,6 +250,66 @@ async def test_no_content_filters_behaviour_unchanged(chat_storage):
 
 
 @pytest.mark.asyncio
+async def test_content_filters_consecutive_message_returns_unmasked(filtered_chat_storage):
+    """
+    When a consecutive same-role message is detected, save_chat_message short-circuits
+    and returns the existing conversation without persisting the new message. That
+    early-return path must still restore original values (via _reverse_content_filters)
+    instead of leaking the raw, placeholder-masked stored content.
+    """
+    user_id = 'user1'
+    session_id = 'session1'
+    agent_id = 'agent1'
+    message1 = ConversationMessage(
+        role=ParticipantRole.USER.value,
+        content=[{'text': 'Hello from acme-corp'}]
+    )
+    message2 = ConversationMessage(
+        role=ParticipantRole.USER.value,
+        content=[{'text': 'Another message from acme-corp'}]
+    )
+
+    await filtered_chat_storage.save_chat_message(user_id, session_id, agent_id, message1)
+    # Second message has the same role as the last stored message, so it should be
+    # rejected and the (unmasked) existing conversation returned instead.
+    result = await filtered_chat_storage.save_chat_message(user_id, session_id, agent_id, message2)
+
+    assert len(result) == 1
+    assert result[0].content == [{'text': 'Hello from acme-corp'}]
+    # Ensure no placeholder text leaked through
+    assert '#COMPANY#' not in str(result[0].content)
+
+
+@pytest.mark.asyncio
+async def test_fetch_all_chats_restores_non_list_content(filtered_chat_storage):
+    """
+    fetch_all_chats must reverse content filters regardless of whether the stored
+    message content is a list or a plain string. Previously, an isinstance(list)
+    guard skipped restoration for non-list content, letting masked placeholder
+    text leak into the returned chat list.
+    """
+    user_id = 'user1'
+    session_id = 'session1'
+    agent_id = 'agent1'
+    key = filtered_chat_storage._generate_key(user_id, session_id, agent_id)
+
+    filtered_chat_storage.table.put_item(Item={
+        'PK': user_id,
+        'SK': key,
+        'conversation': [
+            {'role': ParticipantRole.USER.value, 'content': 'Hello from #COMPANY#', 'timestamp': 1},
+        ],
+    })
+
+    all_chats = await filtered_chat_storage.fetch_all_chats(user_id, session_id)
+    assert len(all_chats) == 1
+    # Non-list content is wrapped into a text block by fetch_all_chats, but the
+    # placeholder must have been restored to the original value first.
+    assert all_chats[0].content == [{'text': 'Hello from acme-corp'}]
+    assert '#COMPANY#' not in str(all_chats[0].content)
+
+
+@pytest.mark.asyncio
 async def test_save_and_fetch_chat_messages_timestamp(chat_storage):
     """
     Testing saving multiple ConversationMessage at once

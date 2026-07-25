@@ -71,7 +71,10 @@ class DynamoDbChatStorage(ChatStorage):
         if self.is_same_role_as_last_message(existing_conversation, new_message):
             Logger.debug(f"> Consecutive {new_message.role} \
                           message detected for agent {agent_id}. Not saving.")
-            return existing_conversation
+            return [ConversationMessage(
+                role=msg.role,
+                content=self._reverse_content_filters(msg.content)
+            ) for msg in existing_conversation]
 
         if isinstance(new_message, ConversationMessage):
             new_message = TimestampedMessage(
@@ -229,8 +232,7 @@ class DynamoDbChatStorage(ChatStorage):
 
                 agent_id = item['SK'].split('#')[1]
                 for msg in item['conversation']:
-                    content = self._reverse_content_filters(msg['content']) \
-                        if isinstance(msg['content'], list) else msg['content']
+                    content = self._reverse_content_filters(msg['content'])
                     if msg['role'] == ParticipantRole.ASSISTANT.value:
                         text = content[0]['text'] if isinstance(content, list) else content
                         content = [{'text': f"[{agent_id}] {text}"}]
