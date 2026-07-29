@@ -65,7 +65,13 @@ export interface MCPServerConfig {
  * await provider.disconnect();
  * ```
  *
- * The `@modelcontextprotocol/sdk` package must be installed separately:
+ * An MCP SDK must be installed separately — either the v2 client package
+ * (speaks protocol 2026-07-28 and every older server via auto negotiation;
+ * preferred when both are installed):
+ * ```
+ * npm install @modelcontextprotocol/client
+ * ```
+ * or the v1 SDK (older servers only):
  * ```
  * npm install @modelcontextprotocol/sdk
  * ```
@@ -123,40 +129,64 @@ export class MCPToolProvider extends AgentTools {
     let ClientClass: any;
     let StdioClientTransport: any;
     let SSEClientTransport: any;
+    let StreamableHTTPClientTransport: any;
+    // v2 (@modelcontextprotocol/client) speaks both the 2026-07-28 stateless
+    // protocol and the legacy handshake; preferred over v1 when installed.
+    let usingV2 = false;
 
     try {
       // @ts-ignore — optional peerDependency; not available in type-checking until installed
-      const clientMod = await import("@modelcontextprotocol/sdk/client/index.js");
-      ClientClass = clientMod.Client;
+      const v2Mod = await import("@modelcontextprotocol/client");
+      ClientClass = v2Mod.Client;
+      SSEClientTransport = v2Mod.SSEClientTransport;
+      StreamableHTTPClientTransport = v2Mod.StreamableHTTPClientTransport;
+      usingV2 = true;
+      try {
+        // @ts-ignore — optional peerDependency; Node-only subpath
+        const v2StdioMod = await import("@modelcontextprotocol/client/stdio");
+        StdioClientTransport = v2StdioMod.StdioClientTransport;
+      } catch {
+        StdioClientTransport = null;
+      }
     } catch {
-      throw new Error(
-        "Install @modelcontextprotocol/sdk to use MCPToolProvider: npm install @modelcontextprotocol/sdk"
-      );
+      usingV2 = false;
     }
 
-    try {
-      // @ts-ignore — optional peerDependency
-      const stdioMod = await import("@modelcontextprotocol/sdk/client/stdio.js");
-      StdioClientTransport = stdioMod.StdioClientTransport;
-    } catch {
-      StdioClientTransport = null;
-    }
+    if (!usingV2) {
+      try {
+        // @ts-ignore — optional peerDependency
+        const clientMod = await import("@modelcontextprotocol/sdk/client/index.js");
+        ClientClass = clientMod.Client;
+      } catch {
+        throw new Error(
+          "Install an MCP SDK to use MCPToolProvider: npm install @modelcontextprotocol/client " +
+            "(supports protocol 2026-07-28 and older servers) or npm install @modelcontextprotocol/sdk (older servers only)"
+        );
+      }
 
-    try {
-      // @ts-ignore — optional peerDependency
-      const sseMod = await import("@modelcontextprotocol/sdk/client/sse.js");
-      SSEClientTransport = sseMod.SSEClientTransport;
-    } catch {
-      SSEClientTransport = null;
-    }
+      try {
+        // @ts-ignore — optional peerDependency
+        const stdioMod = await import("@modelcontextprotocol/sdk/client/stdio.js");
+        StdioClientTransport = stdioMod.StdioClientTransport;
+      } catch {
+        StdioClientTransport = null;
+      }
 
-    let StreamableHTTPClientTransport: any;
-    try {
-      // @ts-ignore — optional peerDependency; module exists since SDK ~1.10
-      const streamableMod = await import("@modelcontextprotocol/sdk/client/streamableHttp.js");
-      StreamableHTTPClientTransport = streamableMod.StreamableHTTPClientTransport;
-    } catch {
-      StreamableHTTPClientTransport = null;
+      try {
+        // @ts-ignore — optional peerDependency
+        const sseMod = await import("@modelcontextprotocol/sdk/client/sse.js");
+        SSEClientTransport = sseMod.SSEClientTransport;
+      } catch {
+        SSEClientTransport = null;
+      }
+
+      try {
+        // @ts-ignore — optional peerDependency; module exists since SDK ~1.10
+        const streamableMod = await import("@modelcontextprotocol/sdk/client/streamableHttp.js");
+        StreamableHTTPClientTransport = streamableMod.StreamableHTTPClientTransport;
+      } catch {
+        StreamableHTTPClientTransport = null;
+      }
     }
 
     const allTools: AgentTool[] = [];
@@ -167,7 +197,8 @@ export class MCPToolProvider extends AgentTools {
       if (serverConfig.type === "stdio") {
         if (!StdioClientTransport) {
           throw new Error(
-            "StdioClientTransport not available — check your @modelcontextprotocol/sdk installation"
+            "StdioClientTransport not available — check your MCP SDK installation " +
+              `(${usingV2 ? "@modelcontextprotocol/client" : "@modelcontextprotocol/sdk"})`
           );
         }
         if (!serverConfig.command) {
@@ -183,7 +214,8 @@ export class MCPToolProvider extends AgentTools {
       } else if (serverConfig.type === "sse") {
         if (!SSEClientTransport) {
           throw new Error(
-            "SSEClientTransport not available — check your @modelcontextprotocol/sdk installation"
+            "SSEClientTransport not available — check your MCP SDK installation " +
+              `(${usingV2 ? "@modelcontextprotocol/client" : "@modelcontextprotocol/sdk"})`
           );
         }
         if (!serverConfig.url) {
@@ -191,13 +223,24 @@ export class MCPToolProvider extends AgentTools {
             "MCPServerConfig with type 'sse' requires a 'url' field"
           );
         }
-        transport = new SSEClientTransport(new URL(serverConfig.url), {
-          headers: serverConfig.headers ?? {},
-        });
+        // v2 has no top-level `headers` option; POST-channel headers go via
+        // requestInit (GET-stream headers tracked in #640).
+        transport = usingV2
+          ? new SSEClientTransport(
+              new URL(serverConfig.url),
+              serverConfig.headers
+                ? { requestInit: { headers: serverConfig.headers } }
+                : undefined
+            )
+          : new SSEClientTransport(new URL(serverConfig.url), {
+              headers: serverConfig.headers ?? {},
+            });
       } else if (serverConfig.type === "streamable-http") {
         if (!StreamableHTTPClientTransport) {
           throw new Error(
-            "StreamableHTTPClientTransport not available — upgrade @modelcontextprotocol/sdk (requires >=1.10)"
+            usingV2
+              ? "StreamableHTTPClientTransport not available — check your @modelcontextprotocol/client installation"
+              : "StreamableHTTPClientTransport not available — upgrade @modelcontextprotocol/sdk (requires >=1.10)"
           );
         }
         if (!serverConfig.url) {
@@ -217,10 +260,17 @@ export class MCPToolProvider extends AgentTools {
         );
       }
 
-      const client = new ClientClass(
-        { name: "agent-squad-mcp-client", version: "1.0.0" },
-        { capabilities: {} }
-      );
+      // mode "auto" probes server/discover (protocol 2026-07-28) and falls back
+      // to the legacy initialize handshake, so both server eras work.
+      const client = usingV2
+        ? new ClientClass(
+            { name: "agent-squad-mcp-client", version: "1.0.0" },
+            { capabilities: {}, versionNegotiation: { mode: "auto" } }
+          )
+        : new ClientClass(
+            { name: "agent-squad-mcp-client", version: "1.0.0" },
+            { capabilities: {} }
+          );
 
       await client.connect(transport);
       this.clients.push(client);
