@@ -250,6 +250,7 @@ export default defineConfig({
 											{ label: 'File', slug: 'swift/storage/built-in/file' },
 											{ label: 'Device (SwiftData)', slug: 'swift/storage/built-in/device' },
 											{ label: 'Transforming (PII scrub)', slug: 'swift/storage/built-in/transforming' },
+											{ label: 'Summarizing', slug: 'swift/storage/built-in/summarizing' },
 										],
 									},
 									{ label: 'Custom store', slug: 'swift/storage/custom' },
