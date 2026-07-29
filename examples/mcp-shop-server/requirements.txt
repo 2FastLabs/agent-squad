@@ -1,3 +1,2 @@
-# Tested with mcp 1.28.1. `meta=` on @mcp.tool and structured_output need a recent build.
-# Capped to <2: mcp 2.0.0 is a breaking release (FastMCP renamed, snake_case types).
-mcp>=1.28.0,<2
+# mcp 2.x (MCPServer) serves MCP protocol 2026-07-28 and answers legacy clients too.
+mcp>=2.0.0
