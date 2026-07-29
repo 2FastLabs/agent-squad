@@ -85,7 +85,7 @@ await provider.disconnect()
 
 ## Transports
 
-`MCPToolProvider` supports two transports.
+`MCPToolProvider` supports three transports: `stdio`, `streamable-http`, and `sse`.
 
 ### stdio — spawn a local process
 
@@ -122,9 +122,44 @@ provider = await MCPToolProvider.create([
   </TabItem>
 </Tabs>
 
-### SSE — connect to a remote server
+### Streamable HTTP — connect to a remote server
 
-Connect to an MCP server running over HTTP Server-Sent Events (SSE).
+The current standard HTTP transport for remote MCP servers. Use this for any server you don't spawn locally, unless it only speaks the older SSE protocol.
+
+<Tabs syncKey="runtime">
+  <TabItem label="TypeScript" icon="seti:typescript" color="blue">
+```typescript
+import { MCPToolProvider } from "agent-squad";
+
+const provider = await MCPToolProvider.create([
+  {
+    type: "streamable-http",
+    url: "http://localhost:3000/mcp",
+    headers: { Authorization: `Bearer ${process.env.MCP_TOKEN}` },
+  },
+]);
+```
+Requires `@modelcontextprotocol/sdk` >= 1.10.
+  </TabItem>
+  <TabItem label="Python" icon="seti:python">
+```python
+from agent_squad.tools import MCPToolProvider, MCPServerConfig
+
+provider = await MCPToolProvider.create([
+    MCPServerConfig(
+        type="streamable-http",
+        url="http://localhost:3000/mcp",
+        headers={"Authorization": f"Bearer {os.environ['MCP_TOKEN']}"},
+    )
+])
+```
+Requires `mcp` >= 1.9 (already satisfied by a fresh `pip install "agent-squad[mcp]"`).
+  </TabItem>
+</Tabs>
+
+### SSE — connect to a legacy remote server
+
+Connect to an MCP server running over HTTP Server-Sent Events (SSE). This is the older HTTP transport, deprecated by the MCP spec since 2025-03-26 — prefer `streamable-http` for servers that support it.
 
 <Tabs syncKey="runtime">
   <TabItem label="TypeScript" icon="seti:typescript" color="blue">
@@ -167,7 +202,7 @@ import { MCPToolProvider } from "agent-squad";
 const provider = await MCPToolProvider.create([
   { type: "stdio", command: "uvx", args: ["filesystem-server"] },
   { type: "stdio", command: "uvx", args: ["database-server"] },
-  { type: "sse",   url: "https://api.example.com/mcp" },
+  { type: "streamable-http", url: "https://api.example.com/mcp" },
 ]);
 ```
   </TabItem>
@@ -178,7 +213,7 @@ from agent_squad.tools import MCPToolProvider, MCPServerConfig
 provider = await MCPToolProvider.create([
     MCPServerConfig(type="stdio", command="uvx", args=["filesystem-server"]),
     MCPServerConfig(type="stdio", command="uvx", args=["database-server"]),
-    MCPServerConfig(type="sse",   url="https://api.example.com/mcp"),
+    MCPServerConfig(type="streamable-http", url="https://api.example.com/mcp"),
 ])
 ```
   </TabItem>
@@ -259,22 +294,22 @@ Available in the Python and TypeScript `MCPToolProvider`. See the [GroundedAgent
   <TabItem label="TypeScript" icon="seti:typescript" color="blue">
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `type` | `"stdio" \| "sse"` | Yes | Transport type |
+| `type` | `"stdio" \| "streamable-http" \| "sse"` | Yes | Transport type |
 | `command` | `string` | stdio only | Executable to launch |
 | `args` | `string[]` | No | Arguments for the command |
 | `env` | `Record<string, string>` | No | Environment variables for the subprocess |
-| `url` | `string` | sse only | Full URL of the SSE endpoint |
-| `headers` | `Record<string, string>` | No | HTTP headers for the SSE connection |
+| `url` | `string` | streamable-http / sse | Full URL of the server endpoint |
+| `headers` | `Record<string, string>` | No | HTTP headers for the connection |
   </TabItem>
   <TabItem label="Python" icon="seti:python">
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `type` | `str` (`"stdio"` or `"sse"`) | Yes | Transport type |
+| `type` | `str` (`"stdio"`, `"streamable-http"` or `"sse"`) | Yes | Transport type |
 | `command` | `str` | stdio only | Executable to launch |
 | `args` | `list[str]` | No | Arguments for the command |
 | `env` | `dict[str, str]` | No | Environment variables for the subprocess |
-| `url` | `str` | sse only | Full URL of the SSE endpoint |
-| `headers` | `dict[str, str]` | No | HTTP headers for the SSE connection |
+| `url` | `str` | streamable-http / sse | Full URL of the server endpoint |
+| `headers` | `dict[str, str]` | No | HTTP headers for the connection |
   </TabItem>
 </Tabs>
 

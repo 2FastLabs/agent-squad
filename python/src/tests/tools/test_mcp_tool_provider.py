@@ -61,18 +61,21 @@ def mock_mcp_modules():
     mock_client_session_cls = MagicMock()
     mock_stdio_client = MagicMock()
     mock_sse_client = MagicMock()
+    mock_streamablehttp_client = MagicMock()
     mock_stdio_params_cls = MagicMock()
 
     with (
         patch("agent_squad.tools.mcp_tool_provider.ClientSession", mock_client_session_cls),
         patch("agent_squad.tools.mcp_tool_provider.stdio_client", mock_stdio_client),
         patch("agent_squad.tools.mcp_tool_provider.sse_client", mock_sse_client),
+        patch("agent_squad.tools.mcp_tool_provider.streamablehttp_client", mock_streamablehttp_client),
         patch("agent_squad.tools.mcp_tool_provider.StdioServerParameters", mock_stdio_params_cls),
     ):
         yield {
             "ClientSession": mock_client_session_cls,
             "stdio_client": mock_stdio_client,
             "sse_client": mock_sse_client,
+            "streamablehttp_client": mock_streamablehttp_client,
             "StdioServerParameters": mock_stdio_params_cls,
         }
 
@@ -402,6 +405,72 @@ async def test_lazy_connection_sse(mock_mcp_modules):
     mock_mcp_modules["sse_client"].assert_called_once_with(
         "http://localhost:9000/sse", headers={}
     )
+
+
+@pytest.mark.asyncio
+async def test_lazy_connection_streamable_http(mock_mcp_modules):
+    from agent_squad.tools.mcp_tool_provider import MCPToolProvider, MCPServerConfig
+
+    tool = _make_mcp_tool("search", "Search")
+
+    read_mock = MagicMock()
+    write_mock = MagicMock()
+    get_session_id_mock = MagicMock()
+    fake_cm = AsyncMock()
+    # streamablehttp_client yields a 3-tuple, unlike stdio/sse
+    fake_cm.__aenter__ = AsyncMock(return_value=(read_mock, write_mock, get_session_id_mock))
+    fake_cm.__aexit__ = AsyncMock(return_value=False)
+
+    mock_mcp_modules["streamablehttp_client"].return_value = fake_cm
+
+    mock_session_instance = AsyncMock()
+    mock_session_instance.__aenter__ = AsyncMock(return_value=mock_session_instance)
+    mock_session_instance.__aexit__ = AsyncMock(return_value=False)
+    mock_session_instance.initialize = AsyncMock()
+    mock_session_instance.list_tools = AsyncMock(
+        return_value=_make_list_tools_result([tool])
+    )
+    mock_mcp_modules["ClientSession"].return_value = mock_session_instance
+
+    provider = MCPToolProvider(
+        [MCPServerConfig(
+            type="streamable-http",
+            url="http://localhost:9000/mcp",
+            headers={"x-api-key": "abc"},
+        )]
+    )
+
+    await provider._ensure_connected()
+
+    assert provider._connected
+    assert "search" in provider._tool_map
+    mock_mcp_modules["streamablehttp_client"].assert_called_once_with(
+        "http://localhost:9000/mcp", headers={"x-api-key": "abc"}
+    )
+
+
+@pytest.mark.asyncio
+async def test_streamable_http_missing_url(mock_mcp_modules):
+    from agent_squad.tools.mcp_tool_provider import MCPToolProvider, MCPServerConfig
+
+    provider = MCPToolProvider([MCPServerConfig(type="streamable-http")])  # no url
+
+    with pytest.raises(ValueError, match="url"):
+        await provider._ensure_connected()
+
+
+@pytest.mark.asyncio
+async def test_streamable_http_requires_recent_mcp(mock_mcp_modules):
+    """When the installed mcp predates the streamable_http module, the error must say how to fix it."""
+    from agent_squad.tools.mcp_tool_provider import MCPToolProvider, MCPServerConfig
+
+    provider = MCPToolProvider(
+        [MCPServerConfig(type="streamable-http", url="http://localhost:9000/mcp")]
+    )
+
+    with patch("agent_squad.tools.mcp_tool_provider.streamablehttp_client", None):
+        with pytest.raises(ImportError, match="mcp>=1.9"):
+            await provider._ensure_connected()
 
 
 @pytest.mark.asyncio
