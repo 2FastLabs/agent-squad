@@ -4,6 +4,7 @@ export const BEDROCK_MODEL_ID_CLAUDE_3_5_SONNET = "anthropic.claude-3-5-sonnet-2
 export const BEDROCK_MODEL_ID_LLAMA_3_70B = "meta.llama3-70b-instruct-v1:0";
 export const OPENAI_MODEL_ID_GPT_O_MINI = "gpt-4o-mini";
 export const ANTHROPIC_MODEL_ID_CLAUDE_3_5_SONNET = "claude-3-5-sonnet-20240620";
+export const ANTHROPIC_MODEL_ID_CLAUDE_SONNET_4 = "claude-sonnet-4-20250514";
 
 export const AgentTypes = {
   DEFAULT: "Common Knowledge",
