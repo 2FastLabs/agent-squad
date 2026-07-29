@@ -50,6 +50,26 @@ try:
 except ImportError:
     streamablehttp_client = None
 
+# mcp 2.x detection: the first-class Client only exists there. When present, all
+# connections go through it (mode="auto" probes server/discover for protocol
+# 2026-07-28 and falls back to the legacy initialize handshake per server).
+try:
+    from mcp import Client as _V2Client
+except ImportError:
+    _V2Client = None
+
+# v2 name of the streamable HTTP transport (also present in late 1.x).
+try:
+    from mcp.client.streamable_http import streamable_http_client
+except ImportError:
+    streamable_http_client = None
+
+# Blessed httpx2/httpx client factory (headers, MCP-recommended timeouts).
+try:
+    from mcp.shared._httpx_utils import create_mcp_http_client
+except ImportError:
+    create_mcp_http_client = None
+
 from pydantic import AnyUrl  # mcp depends on pydantic, so it's available whenever the import above succeeds
 
 from dataclasses import dataclass, field
@@ -84,6 +104,23 @@ class MCPServerConfig:
     env: Optional[dict[str, str]] = None
     url: Optional[str] = None
     headers: Optional[dict[str, str]] = None
+
+
+_UNSET = object()
+
+
+def _field(obj: Any, *names: str, default: Any = None) -> Any:
+    """Read the first present attribute among ``names``.
+
+    mcp 1.x exposes camelCase attributes (``inputSchema``, ``isError``) while
+    2.x is strictly snake_case (``input_schema``, ``is_error``) with no alias
+    attribute access — both spellings must be tried.
+    """
+    for name in names:
+        value = getattr(obj, name, _UNSET)
+        if value is not _UNSET:
+            return value
+    return default
 
 
 def _meta_dict(mcp_tool: Any) -> Optional[dict[str, Any]]:
@@ -204,45 +241,13 @@ class MCPToolProvider(AgentTools):
             return
 
         for server_cfg in self._servers:
-            if server_cfg.type == "stdio":
-                if not server_cfg.command:
-                    raise ValueError("MCPServerConfig with type='stdio' requires a 'command'")
-                params = StdioServerParameters(
-                    command=server_cfg.command,
-                    args=server_cfg.args or [],
-                    env=server_cfg.env,
-                )
-                cm = stdio_client(params)
-            elif server_cfg.type == "sse":
-                if not server_cfg.url:
-                    raise ValueError("MCPServerConfig with type='sse' requires a 'url'")
-                cm = sse_client(server_cfg.url, headers=server_cfg.headers or {})
-            elif server_cfg.type == "streamable-http":
-                if streamablehttp_client is None:
-                    raise ImportError(
-                        "The streamable-http transport requires mcp>=1.9. "
-                        "Upgrade it with: pip install -U 'mcp>=1.9,<2'"
-                    )
-                if not server_cfg.url:
-                    raise ValueError("MCPServerConfig with type='streamable-http' requires a 'url'")
-                cm = streamablehttp_client(server_cfg.url, headers=server_cfg.headers or {})
+            if _V2Client is not None:
+                session = await self._connect_v2(server_cfg)
             else:
-                raise ValueError(
-                    f"Unsupported MCPServerConfig type: '{server_cfg.type}'. "
-                    "Use 'stdio', 'streamable-http' or 'sse'."
-                )
+                session = await self._connect_v1(server_cfg)
 
-            # stdio/sse yield (read, write); streamable-http yields (read, write, get_session_id)
-            read, write, *_ = await cm.__aenter__()
-            self._cm_stack.append(cm)
-
-            session = ClientSession(read, write)
-            await session.__aenter__()
-            self._sessions.append(session)
-            await session.initialize()
-
-            tools_result = await session.list_tools()
-            for mcp_tool in tools_result.tools:
+            tools = await self._list_all_tools(session)
+            for mcp_tool in tools:
                 meta = _meta_dict(mcp_tool)
                 self._tool_map[mcp_tool.name] = _MCPToolEntry(
                     session=session,
@@ -252,6 +257,85 @@ class MCPToolProvider(AgentTools):
                 )
 
         self._connected = True
+
+    def _transport_cm(self, server_cfg: MCPServerConfig, v2: bool) -> Any:
+        """The transport async context manager for a server config (shared by both majors)."""
+        if server_cfg.type == "stdio":
+            if not server_cfg.command:
+                raise ValueError("MCPServerConfig with type='stdio' requires a 'command'")
+            params = StdioServerParameters(
+                command=server_cfg.command,
+                args=server_cfg.args or [],
+                env=server_cfg.env,
+            )
+            return stdio_client(params)
+        if server_cfg.type == "sse":
+            if not server_cfg.url:
+                raise ValueError("MCPServerConfig with type='sse' requires a 'url'")
+            return sse_client(server_cfg.url, headers=server_cfg.headers or {})
+        if server_cfg.type == "streamable-http":
+            if not server_cfg.url:
+                raise ValueError("MCPServerConfig with type='streamable-http' requires a 'url'")
+            if v2:
+                # v2 renamed the function and moved headers onto an httpx client.
+                if server_cfg.headers:
+                    if create_mcp_http_client is not None:
+                        http_client = create_mcp_http_client(headers=server_cfg.headers)
+                    else:
+                        # The factory lives in a private mcp module; fall back to a
+                        # plain client (httpx2 is a hard dependency of mcp 2.x).
+                        import httpx2
+
+                        http_client = httpx2.AsyncClient(
+                            headers=server_cfg.headers, follow_redirects=True
+                        )
+                    # v2 does not manage a caller-provided client; we own its lifecycle.
+                    self._cm_stack.append(http_client)
+                    return streamable_http_client(server_cfg.url, http_client=http_client)
+                return streamable_http_client(server_cfg.url)
+            if streamablehttp_client is None:
+                raise ImportError(
+                    "The streamable-http transport requires mcp>=1.9. "
+                    "Upgrade it with: pip install -U mcp"
+                )
+            return streamablehttp_client(server_cfg.url, headers=server_cfg.headers or {})
+        raise ValueError(
+            f"Unsupported MCPServerConfig type: '{server_cfg.type}'. "
+            "Use 'stdio', 'streamable-http' or 'sse'."
+        )
+
+    async def _connect_v1(self, server_cfg: MCPServerConfig) -> Any:
+        """mcp 1.x: transport streams + ClientSession + legacy initialize handshake."""
+        cm = self._transport_cm(server_cfg, v2=False)
+        # stdio/sse yield (read, write); streamable-http yields (read, write, get_session_id)
+        read, write, *_ = await cm.__aenter__()
+        self._cm_stack.append(cm)
+
+        session = ClientSession(read, write)
+        await session.__aenter__()
+        self._sessions.append(session)
+        await session.initialize()
+        return session
+
+    async def _connect_v2(self, server_cfg: MCPServerConfig) -> Any:
+        """mcp 2.x: one Client per server; mode="auto" negotiates the protocol era."""
+        client = _V2Client(self._transport_cm(server_cfg, v2=True), mode="auto")
+        await client.__aenter__()
+        self._sessions.append(client)
+        return client
+
+    async def _list_all_tools(self, session: Any) -> list[Any]:
+        """All tools from a session, following pagination cursors when present."""
+        result = await session.list_tools()
+        tools = list(result.tools)
+        cursor = _field(result, "nextCursor", "next_cursor")
+        # v1 deliberately keeps its pre-existing single-call behavior (no behavior
+        # change for existing users); only the v2 path follows pagination cursors.
+        while cursor and _V2Client is not None and isinstance(session, _V2Client):
+            result = await session.list_tools(cursor=cursor)
+            tools.extend(result.tools)
+            cursor = _field(result, "nextCursor", "next_cursor")
+        return tools
 
     async def disconnect(self) -> None:
         """Disconnect from all MCP servers and release resources.
@@ -373,11 +457,11 @@ class MCPToolProvider(AgentTools):
         ]
         text = "\n".join(parts)
 
-        if getattr(call_result, "isError", False):
+        if _field(call_result, "isError", "is_error", default=False):
             # Surface the error text back to the model so it can react.
             return ToolResult(content=f"Tool error: {text}" if text else "Tool returned an error")
 
-        structured = getattr(call_result, "structuredContent", None) or {}
+        structured = _field(call_result, "structuredContent", "structured_content") or {}
 
         ui: Optional[UIPayload] = None
         if entry.ui:
@@ -402,14 +486,18 @@ class MCPToolProvider(AgentTools):
         if cache_key in self._template_cache:
             return self._template_cache[cache_key]
         try:
-            read_result = await session.read_resource(AnyUrl(resource_uri))
+            # v2's read_resource takes a plain str; v1's ClientSession wants AnyUrl.
+            if _V2Client is not None and isinstance(session, _V2Client):
+                read_result = await session.read_resource(resource_uri)
+            else:
+                read_result = await session.read_resource(AnyUrl(resource_uri))
         except Exception:  # noqa: BLE001
             return None
         contents = getattr(read_result, "contents", None) or []
         if not contents:
             return None
         first = contents[0]
-        mime_type = getattr(first, "mimeType", None) or "text/html;profile=mcp-app"
+        mime_type = _field(first, "mimeType", "mime_type") or "text/html;profile=mcp-app"
         body = getattr(first, "text", None)
         if body is None:
             blob = getattr(first, "blob", None)
@@ -441,9 +529,10 @@ class MCPToolProvider(AgentTools):
             if not entry.model_visible:
                 continue  # app-only tool: callable by the UI, never advertised to the model
             mcp_tool = entry.tool
+            raw_schema = _field(mcp_tool, "inputSchema", "input_schema")
             input_schema = (
-                mcp_tool.inputSchema
-                if isinstance(mcp_tool.inputSchema, dict)
+                raw_schema
+                if isinstance(raw_schema, dict)
                 else {"type": "object", "properties": {}}
             )
             result.append(
@@ -464,9 +553,10 @@ class MCPToolProvider(AgentTools):
             if not entry.model_visible:
                 continue  # app-only tool: callable by the UI, never advertised to the model
             mcp_tool = entry.tool
+            raw_schema = _field(mcp_tool, "inputSchema", "input_schema")
             input_schema = (
-                mcp_tool.inputSchema
-                if isinstance(mcp_tool.inputSchema, dict)
+                raw_schema
+                if isinstance(raw_schema, dict)
                 else {"type": "object", "properties": {}}
             )
             result.append(
@@ -489,9 +579,10 @@ class MCPToolProvider(AgentTools):
             if not entry.model_visible:
                 continue  # app-only tool: callable by the UI, never advertised to the model
             mcp_tool = entry.tool
+            raw_schema = _field(mcp_tool, "inputSchema", "input_schema")
             input_schema = (
-                mcp_tool.inputSchema
-                if isinstance(mcp_tool.inputSchema, dict)
+                raw_schema
+                if isinstance(raw_schema, dict)
                 else {"type": "object", "properties": {}}
             )
             # Ensure required field is present for strict mode compatibility

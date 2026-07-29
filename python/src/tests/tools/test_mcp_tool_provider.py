@@ -70,6 +70,8 @@ def mock_mcp_modules():
         patch("agent_squad.tools.mcp_tool_provider.sse_client", mock_sse_client),
         patch("agent_squad.tools.mcp_tool_provider.streamablehttp_client", mock_streamablehttp_client),
         patch("agent_squad.tools.mcp_tool_provider.StdioServerParameters", mock_stdio_params_cls),
+        # Pin these tests to the mcp 1.x code path regardless of the installed major.
+        patch("agent_squad.tools.mcp_tool_provider._V2Client", None),
     ):
         yield {
             "ClientSession": mock_client_session_cls,
@@ -716,3 +718,253 @@ async def test_app_only_tool_still_callable(mock_mcp_modules):
     result = await provider._call_mcp_tool("refresh_order", {})
     assert result.content == "refreshed"
     assert result.structured_content == {"s": 2}
+
+
+# ---------------------------------------------------------------------------
+# mcp 2.x code path (v2 Client, snake_case types)
+# ---------------------------------------------------------------------------
+
+def _make_mcp_tool_v2(name: str, description: str = "", meta: dict | None = None):
+    """A mock shaped like an mcp-types 2.x Tool: strictly snake_case attributes."""
+    return SimpleNamespace(
+        name=name,
+        description=description,
+        input_schema={"type": "object", "properties": {"q": {"type": "string"}}, "required": ["q"]},
+        meta=meta,
+    )
+
+
+def _make_call_result_v2(text: str, is_error: bool = False, structured: dict | None = None):
+    """A mock shaped like an mcp-types 2.x CallToolResult: strictly snake_case."""
+    return SimpleNamespace(
+        content=[SimpleNamespace(text=text)],
+        is_error=is_error,
+        structured_content=structured,
+        meta=None,
+    )
+
+
+class _FakeV2Client:
+    """Stands in for mcp.Client (2.x): async CM, constructor records transport/mode."""
+
+    instances: list["_FakeV2Client"] = []
+
+    def __init__(self, transport, *, mode=None):
+        self.transport = transport
+        self.mode = mode
+        self.entered = False
+        self.exited = False
+        self.list_tools = AsyncMock()
+        self.call_tool = AsyncMock()
+        self.read_resource = AsyncMock()
+        _FakeV2Client.instances.append(self)
+
+    async def __aenter__(self):
+        self.entered = True
+        return self
+
+    async def __aexit__(self, *args):
+        self.exited = True
+        return False
+
+
+@pytest.fixture()
+def mock_mcp_v2_modules():
+    """Patch the provider onto the mcp 2.x code path."""
+    _FakeV2Client.instances = []
+    mock_stdio_client = MagicMock(return_value="stdio-transport-cm")
+    mock_sse_client = MagicMock(return_value="sse-transport-cm")
+    mock_streamable = MagicMock(return_value="streamable-transport-cm")
+    mock_httpx_factory = MagicMock(return_value=MagicMock(name="httpx2-client"))
+    mock_stdio_params_cls = MagicMock()
+
+    with (
+        patch("agent_squad.tools.mcp_tool_provider._V2Client", _FakeV2Client),
+        patch("agent_squad.tools.mcp_tool_provider.stdio_client", mock_stdio_client),
+        patch("agent_squad.tools.mcp_tool_provider.sse_client", mock_sse_client),
+        patch("agent_squad.tools.mcp_tool_provider.streamable_http_client", mock_streamable),
+        patch("agent_squad.tools.mcp_tool_provider.create_mcp_http_client", mock_httpx_factory),
+        patch("agent_squad.tools.mcp_tool_provider.StdioServerParameters", mock_stdio_params_cls),
+        patch("agent_squad.tools.mcp_tool_provider.ClientSession", MagicMock()),
+    ):
+        yield {
+            "stdio_client": mock_stdio_client,
+            "sse_client": mock_sse_client,
+            "streamable_http_client": mock_streamable,
+            "create_mcp_http_client": mock_httpx_factory,
+            "StdioServerParameters": mock_stdio_params_cls,
+        }
+
+
+def _seed_v2_list_tools(pages):
+    """Context manager: every _FakeV2Client built inside returns these list_tools pages."""
+    orig_init = _FakeV2Client.__init__
+
+    def seeded_init(self, transport, *, mode=None):
+        orig_init(self, transport, mode=mode)
+        if len(pages) == 1:
+            self.list_tools.return_value = pages[0]
+        else:
+            self.list_tools.side_effect = list(pages)
+
+    return patch.object(_FakeV2Client, "__init__", seeded_init)
+
+
+@pytest.mark.asyncio
+async def test_v2_stdio_connection(mock_mcp_v2_modules):
+    from agent_squad.tools.mcp_tool_provider import MCPToolProvider, MCPServerConfig
+
+    tool = _make_mcp_tool_v2("search", "Search")
+    provider = MCPToolProvider([MCPServerConfig(type="stdio", command="uvx", args=["s"])])
+
+    with _seed_v2_list_tools([SimpleNamespace(tools=[tool], next_cursor=None)]):
+        await provider._ensure_connected()
+
+    assert provider._connected
+    assert "search" in provider._tool_map
+    client = _FakeV2Client.instances[0]
+    assert client.entered
+    assert client.mode == "auto"
+    assert client.transport == "stdio-transport-cm"
+    # v1 machinery untouched on the v2 path
+    assert provider._cm_stack == []
+
+
+@pytest.mark.asyncio
+async def test_v2_streamable_http_headers_via_httpx_client(mock_mcp_v2_modules):
+    from agent_squad.tools.mcp_tool_provider import MCPToolProvider, MCPServerConfig
+
+    tool = _make_mcp_tool_v2("search", "Search")
+    provider = MCPToolProvider([
+        MCPServerConfig(type="streamable-http", url="http://h/mcp", headers={"x-k": "v"})
+    ])
+
+    with _seed_v2_list_tools([SimpleNamespace(tools=[tool], next_cursor=None)]):
+        await provider._ensure_connected()
+
+    mock_mcp_v2_modules["create_mcp_http_client"].assert_called_once_with(headers={"x-k": "v"})
+    http_client = mock_mcp_v2_modules["create_mcp_http_client"].return_value
+    mock_mcp_v2_modules["streamable_http_client"].assert_called_once_with(
+        "http://h/mcp", http_client=http_client
+    )
+    # We own the httpx client's lifecycle: it must sit on the cm stack for disconnect.
+    assert http_client in provider._cm_stack
+
+
+@pytest.mark.asyncio
+async def test_v2_list_tools_pagination(mock_mcp_v2_modules):
+    from agent_squad.tools.mcp_tool_provider import MCPToolProvider, MCPServerConfig
+
+    t1 = _make_mcp_tool_v2("alpha")
+    t2 = _make_mcp_tool_v2("beta")
+    provider = MCPToolProvider([MCPServerConfig(type="stdio", command="uvx")])
+
+    with _seed_v2_list_tools([
+        SimpleNamespace(tools=[t1], next_cursor="page2"),
+        SimpleNamespace(tools=[t2], next_cursor=None),
+    ]):
+        await provider._ensure_connected()
+
+    assert set(provider._tool_map) == {"alpha", "beta"}
+    client = _FakeV2Client.instances[0]
+    assert client.list_tools.call_args_list[1].kwargs == {"cursor": "page2"}
+
+
+@pytest.mark.asyncio
+async def test_v2_snake_case_call_result(mock_mcp_v2_modules):
+    """is_error / structured_content must be honored on 2.x result shapes."""
+    from agent_squad.tools.mcp_tool_provider import (
+        MCPToolProvider, MCPServerConfig, _MCPToolEntry, _meta_dict, _ui_resource_uri, _model_visible,
+    )
+
+    tool = _make_mcp_tool_v2("weather")
+    provider = MCPToolProvider([MCPServerConfig(type="stdio", command="uvx")])
+    session = _FakeV2Client("t", mode="auto")
+    meta = _meta_dict(tool)
+    provider._tool_map["weather"] = _MCPToolEntry(
+        session=session, tool=tool, ui=_ui_resource_uri(meta), model_visible=_model_visible(meta),
+    )
+    provider._connected = True
+
+    session.call_tool.return_value = _make_call_result_v2("Sunny", structured={"temp": 25})
+    ok = await provider._call_mcp_tool("weather", {"q": "Paris"})
+    assert ok.content == "Sunny"
+    assert ok.structured_content == {"temp": 25}
+
+    session.call_tool.return_value = _make_call_result_v2("boom", is_error=True)
+    err = await provider._call_mcp_tool("weather", {"q": "Paris"})
+    assert "Tool error" in err.content
+
+
+def test_v2_snake_case_input_schema(mock_mcp_v2_modules):
+    """to_*_format must read input_schema on 2.x tool shapes."""
+    from agent_squad.tools.mcp_tool_provider import (
+        MCPToolProvider, MCPServerConfig, _MCPToolEntry,
+    )
+
+    tool = _make_mcp_tool_v2("calc", "Math")
+    provider = MCPToolProvider([MCPServerConfig(type="stdio", command="uvx")])
+    provider._tool_map["calc"] = _MCPToolEntry(session=MagicMock(), tool=tool)
+    provider._connected = True
+
+    bedrock = provider.to_bedrock_format()
+    assert bedrock[0]["toolSpec"]["inputSchema"]["json"]["properties"] == {"q": {"type": "string"}}
+    claude = provider.to_claude_format()
+    assert claude[0]["input_schema"]["required"] == ["q"]
+
+
+@pytest.mark.asyncio
+async def test_v2_read_resource_receives_plain_str(mock_mcp_v2_modules):
+    """2.x read_resource rejects AnyUrl — the provider must pass the URI as str."""
+    from agent_squad.tools.mcp_tool_provider import MCPToolProvider, MCPServerConfig
+
+    provider = MCPToolProvider([MCPServerConfig(type="stdio", command="uvx")])
+    session = _FakeV2Client("t", mode="auto")
+    session.read_resource.return_value = SimpleNamespace(
+        contents=[SimpleNamespace(uri="ui://x", mime_type="text/html;profile=mcp-app", text="<b/>")]
+    )
+
+    template = await provider._template_for(session, "ui://x")
+
+    assert template == ("text/html;profile=mcp-app", "<b/>")
+    session.read_resource.assert_called_once_with("ui://x")
+    assert isinstance(session.read_resource.call_args.args[0], str)
+
+
+@pytest.mark.asyncio
+async def test_v2_disconnect_closes_client_and_owned_httpx_client(mock_mcp_v2_modules):
+    """disconnect must exit the v2 Client first, then close the httpx client we own."""
+    from agent_squad.tools.mcp_tool_provider import MCPToolProvider, MCPServerConfig
+
+    tool = _make_mcp_tool_v2("search")
+    # An AsyncMock __aexit__ is essential: a bare MagicMock would raise on await
+    # and be swallowed by disconnect's except, making this test trivially green.
+    httpx_client = MagicMock()
+    httpx_client.__aexit__ = AsyncMock(return_value=False)
+    mock_mcp_v2_modules["create_mcp_http_client"].return_value = httpx_client
+
+    provider = MCPToolProvider([
+        MCPServerConfig(type="streamable-http", url="http://h/mcp", headers={"x-k": "v"})
+    ])
+    with _seed_v2_list_tools([SimpleNamespace(tools=[tool], next_cursor=None)]):
+        await provider._ensure_connected()
+    client = _FakeV2Client.instances[0]
+
+    await provider.disconnect()
+
+    assert client.exited is True
+    httpx_client.__aexit__.assert_awaited_once()
+    assert provider._sessions == []
+    assert provider._cm_stack == []
+    assert provider._tool_map == {}
+    assert provider._connected is False
+
+
+def test_field_helper_reads_both_spellings():
+    from agent_squad.tools.mcp_tool_provider import _field
+
+    v1 = SimpleNamespace(isError=True)
+    v2 = SimpleNamespace(is_error=True)
+    assert _field(v1, "isError", "is_error", default=False) is True
+    assert _field(v2, "isError", "is_error", default=False) is True
+    assert _field(SimpleNamespace(), "isError", "is_error", default=False) is False
