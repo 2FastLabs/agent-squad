@@ -30,7 +30,12 @@ npm install @modelcontextprotocol/sdk
 ```bash
 pip install "agent-squad[mcp]"
 ```
-The `mcp` extra is optional — it is not pulled in when you install the base package. It installs the MCP SDK 1.x (`mcp>=1.0.0,<2`); the SDK's 2.x line is a breaking release and is not supported yet (tracked in [#634](https://github.com/2FastLabs/agent-squad/issues/634)).
+The `mcp` extra is optional — it is not pulled in when you install the base package. Both SDK majors are supported:
+
+| Installed `mcp` version | MCP protocol versions | Notes |
+|---|---|---|
+| `mcp` >= 2.0 | 2026-07-28 **and** all legacy versions | auto-negotiated per server (`server/discover` probe with `initialize` fallback) |
+| `mcp` 1.x | 2025-11-25 and older | the 1.x line will not receive 2026-07-28 support |
   </TabItem>
 </Tabs>
 
@@ -153,7 +158,7 @@ provider = await MCPToolProvider.create([
     )
 ])
 ```
-Requires `mcp` >= 1.9 (already satisfied by a fresh `pip install "agent-squad[mcp]"`).
+Requires `mcp` >= 1.9 (already satisfied by a fresh `pip install "agent-squad[mcp]"`). On `mcp` 2.x, headers are delivered through the SDK's httpx client factory — same config, no code change.
   </TabItem>
 </Tabs>
 
