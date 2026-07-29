@@ -31,12 +31,12 @@ class ComprehendFilterAgent(Agent):
             self.comprehend_client = options.client
         else:
             if options.region:
-                self.client = boto3.client(
+                self.comprehend_client = boto3.client(
                     'comprehend',
                     region_name=options.region or os.environ.get('AWS_REGION')
                 )
             else:
-                self.client = boto3.client('comprehend')
+                self.comprehend_client = boto3.client('comprehend')
 
         self.custom_checks: list[CheckFunction] = []
 
