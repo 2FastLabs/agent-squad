@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 import asyncio
 from agent_squad.agents import Agent, AgentOptions, AgentStreamResponse
 if TYPE_CHECKING:
-    from agent_squad.agents import AnthropicAgent, BedrockLLMAgent
+    from agent_squad.agents import AnthropicAgent, BedrockLLMAgent, OpenAIAgent
 
 
 from agent_squad.types import ConversationMessage, ParticipantRole, TimestampedMessage
@@ -34,11 +34,17 @@ class SupervisorAgentOptions(AgentOptions):
         except ImportError:
             pass
 
+        try:
+            from agent_squad.agents import OpenAIAgent
+            valid_agent_types.append(OpenAIAgent)
+        except ImportError:
+            pass
+
         if not valid_agent_types:
-            raise ImportError("No agents available. Please install at least one agent: AnthropicAgent or BedrockLLMAgent")
+            raise ImportError("No agents available. Please install at least one agent: AnthropicAgent, BedrockLLMAgent or OpenAIAgent")
 
         if not any(isinstance(self.lead_agent, agent_type) for agent_type in valid_agent_types):
-            raise ValueError("Supervisor must be BedrockLLMAgent or AnthropicAgent")
+            raise ValueError("Supervisor must be BedrockLLMAgent, AnthropicAgent or OpenAIAgent")
 
         if self.extra_tools:
             if not isinstance(self.extra_tools, (AgentTools, list)):
@@ -70,7 +76,7 @@ class SupervisorAgent(Agent):
         options.description = options.lead_agent.description
         super().__init__(options)
 
-        self.lead_agent: 'Union[AnthropicAgent, BedrockLLMAgent]' = options.lead_agent
+        self.lead_agent: 'Union[AnthropicAgent, BedrockLLMAgent, OpenAIAgent]' = options.lead_agent
         self.team = options.team
         self.storage = options.storage or InMemoryChatStorage()
         self.trace = options.trace
