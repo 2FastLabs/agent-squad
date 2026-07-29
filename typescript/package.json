@@ -48,10 +48,14 @@
   },
   "peerDependencies": {
     "@dakera-ai/dakera": "^0.11.100",
+    "@modelcontextprotocol/client": ">=2.0.0",
     "@modelcontextprotocol/sdk": ">=1.0.0"
   },
   "peerDependenciesMeta": {
     "@dakera-ai/dakera": {
+      "optional": true
+    },
+    "@modelcontextprotocol/client": {
       "optional": true
     },
     "@modelcontextprotocol/sdk": {

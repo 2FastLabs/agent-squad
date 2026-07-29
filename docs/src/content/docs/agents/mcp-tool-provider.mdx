@@ -22,9 +22,18 @@ The async factory pattern is required because the agent needs tool definitions s
   <TabItem label="TypeScript" icon="seti:typescript" color="blue">
 ```bash
 npm install agent-squad
+npm install @modelcontextprotocol/client   # MCP SDK v2 — recommended
+```
+Or the v1 SDK, if you only talk to servers on protocol 2025-11-25 or older:
+```bash
 npm install @modelcontextprotocol/sdk
 ```
-`@modelcontextprotocol/sdk` is a peer dependency — it is never installed automatically, only when you explicitly add it.
+Both are optional peer dependencies — never installed automatically. When both are present, `MCPToolProvider` uses v2.
+
+| Installed package | MCP protocol versions | Notes |
+|---|---|---|
+| `@modelcontextprotocol/client` >= 2.0.0 | 2026-07-28 **and** all legacy versions | auto-negotiated per server (`server/discover` probe with `initialize` fallback); Node >= 20 |
+| `@modelcontextprotocol/sdk` >= 1.0.0 | 2025-11-25 and older | the v1 package will never support 2026-07-28 |
   </TabItem>
   <TabItem label="Python" icon="seti:python">
 ```bash
@@ -139,7 +148,7 @@ const provider = await MCPToolProvider.create([
   },
 ]);
 ```
-Requires `@modelcontextprotocol/sdk` >= 1.10.
+Requires `@modelcontextprotocol/client` (any version) or `@modelcontextprotocol/sdk` >= 1.10.
   </TabItem>
   <TabItem label="Python" icon="seti:python">
 ```python
