@@ -29,7 +29,7 @@
     "@aws-sdk/client-bedrock-runtime": "^3.651.1",
     "@aws-sdk/core": "^3.651.1",
     "@opensearch-project/opensearch": "^2.12.0",
-    "aws-cdk-lib": "^2.194.0",
+    "aws-cdk-lib": "^2.262.0",
     "aws-lambda": "^1.0.7",
     "constructs": "^10.0.0",
     "esbuild": "^0.24.0",
