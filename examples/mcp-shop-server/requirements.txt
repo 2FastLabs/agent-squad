@@ -1,2 +1,3 @@
 # Tested with mcp 1.28.1. `meta=` on @mcp.tool and structured_output need a recent build.
-mcp>=1.28.0
+# Capped to <2: mcp 2.0.0 is a breaking release (FastMCP renamed, snake_case types).
+mcp>=1.28.0,<2
