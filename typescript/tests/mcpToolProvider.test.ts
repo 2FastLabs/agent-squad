@@ -30,9 +30,17 @@ class MockSSETransport {
   constructor(public url: any, public opts: any) {}
 }
 
+const streamableHttpInstances: MockStreamableHTTPTransport[] = [];
+class MockStreamableHTTPTransport {
+  constructor(public url: any, public opts: any) {
+    streamableHttpInstances.push(this);
+  }
+}
+
 jest.mock("@modelcontextprotocol/sdk/client/index.js", () => ({ Client: MockClient }), { virtual: true });
 jest.mock("@modelcontextprotocol/sdk/client/stdio.js", () => ({ StdioClientTransport: MockStdioTransport }), { virtual: true });
 jest.mock("@modelcontextprotocol/sdk/client/sse.js", () => ({ SSEClientTransport: MockSSETransport }), { virtual: true });
+jest.mock("@modelcontextprotocol/sdk/client/streamableHttp.js", () => ({ StreamableHTTPClientTransport: MockStreamableHTTPTransport }), { virtual: true });
 
 // ---------------------------------------------------------------------------
 // Subject under test
@@ -429,6 +437,46 @@ describe("MCPToolProvider", () => {
     await sseProvider.ensureConnected();
     // If we got here without error, SSE transport was constructed correctly
     expect(mockConnect).toHaveBeenCalled();
+  });
+
+  // -------------------------------------------------------------------------
+  // Streamable HTTP transport
+  // -------------------------------------------------------------------------
+
+  it("creates StreamableHTTPClientTransport with headers in requestInit", async () => {
+    streamableHttpInstances.length = 0;
+    const provider = new MCPToolProvider([
+      { type: "streamable-http", url: "http://localhost:9000/mcp", headers: { "x-api-key": "abc" } },
+    ]);
+
+    await provider.ensureConnected();
+    expect(mockConnect).toHaveBeenCalled();
+    expect(streamableHttpInstances).toHaveLength(1);
+    expect(streamableHttpInstances[0].url.href).toBe("http://localhost:9000/mcp");
+    expect(streamableHttpInstances[0].opts).toEqual({
+      requestInit: { headers: { "x-api-key": "abc" } },
+    });
+  });
+
+  it("creates StreamableHTTPClientTransport without options when no headers given", async () => {
+    streamableHttpInstances.length = 0;
+    const provider = new MCPToolProvider([
+      { type: "streamable-http", url: "http://localhost:9000/mcp" },
+    ]);
+
+    await provider.ensureConnected();
+    expect(streamableHttpInstances).toHaveLength(1);
+    expect(streamableHttpInstances[0].opts).toBeUndefined();
+  });
+
+  it("throws when streamable-http server config has no url", async () => {
+    const badProvider = new MCPToolProvider([
+      { type: "streamable-http" } as MCPServerConfig,
+    ]);
+
+    await expect(badProvider.ensureConnected()).rejects.toThrow(
+      "requires a 'url' field"
+    );
   });
 
   // -------------------------------------------------------------------------

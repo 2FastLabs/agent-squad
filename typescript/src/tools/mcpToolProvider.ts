@@ -21,17 +21,21 @@ function modelVisible(meta: any): boolean {
  * Configuration for a single MCP server connection.
  */
 export interface MCPServerConfig {
-  /** Transport type: stdio (spawn a local process) or sse (HTTP SSE endpoint) */
-  type: "stdio" | "sse";
+  /**
+   * Transport type: stdio (spawn a local process), streamable-http (the current
+   * standard HTTP transport), or sse (the legacy HTTP+SSE transport, kept for
+   * older servers).
+   */
+  type: "stdio" | "sse" | "streamable-http";
   /** stdio only: command to execute */
   command?: string;
   /** stdio only: arguments for the command */
   args?: string[];
   /** stdio only: environment variables for the child process */
   env?: Record<string, string>;
-  /** sse only: full URL of the SSE endpoint */
+  /** streamable-http / sse: full URL of the server endpoint */
   url?: string;
-  /** sse only: extra HTTP headers */
+  /** streamable-http / sse: extra HTTP headers */
   headers?: Record<string, string>;
 }
 
@@ -47,6 +51,7 @@ export interface MCPServerConfig {
  * ```typescript
  * const provider = await MCPToolProvider.create([
  *   { type: "stdio", command: "uvx", args: ["my-mcp-server"] },
+ *   { type: "streamable-http", url: "http://localhost:3000/mcp" },
  *   { type: "sse", url: "http://localhost:3000/sse" },
  * ]);
  *
@@ -145,6 +150,15 @@ export class MCPToolProvider extends AgentTools {
       SSEClientTransport = null;
     }
 
+    let StreamableHTTPClientTransport: any;
+    try {
+      // @ts-ignore — optional peerDependency; module exists since SDK ~1.10
+      const streamableMod = await import("@modelcontextprotocol/sdk/client/streamableHttp.js");
+      StreamableHTTPClientTransport = streamableMod.StreamableHTTPClientTransport;
+    } catch {
+      StreamableHTTPClientTransport = null;
+    }
+
     const allTools: AgentTool[] = [];
 
     for (const serverConfig of this.servers) {
@@ -180,9 +194,26 @@ export class MCPToolProvider extends AgentTools {
         transport = new SSEClientTransport(new URL(serverConfig.url), {
           headers: serverConfig.headers ?? {},
         });
+      } else if (serverConfig.type === "streamable-http") {
+        if (!StreamableHTTPClientTransport) {
+          throw new Error(
+            "StreamableHTTPClientTransport not available — upgrade @modelcontextprotocol/sdk (requires >=1.10)"
+          );
+        }
+        if (!serverConfig.url) {
+          throw new Error(
+            "MCPServerConfig with type 'streamable-http' requires a 'url' field"
+          );
+        }
+        transport = new StreamableHTTPClientTransport(
+          new URL(serverConfig.url),
+          serverConfig.headers
+            ? { requestInit: { headers: serverConfig.headers } }
+            : undefined
+        );
       } else {
         throw new Error(
-          `Unsupported MCPServerConfig type: ${(serverConfig as any).type}`
+          `Unsupported MCPServerConfig type: ${(serverConfig as any).type}. Use 'stdio', 'streamable-http', or 'sse'.`
         );
       }
 

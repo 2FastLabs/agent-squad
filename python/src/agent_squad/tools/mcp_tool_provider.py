@@ -10,6 +10,7 @@ available synchronously when the agent builds its API request::
 
     provider = await MCPToolProvider.create([
         MCPServerConfig(type="stdio", command="uvx", args=["my-mcp-server"]),
+        MCPServerConfig(type="streamable-http", url="http://localhost:3000/mcp"),
         MCPServerConfig(type="sse", url="http://localhost:3000/sse"),
     ])
 
@@ -42,6 +43,13 @@ except ImportError as exc:
         "Install it with: pip install agent-squad[mcp]"
     ) from exc
 
+# Guarded separately: the module only exists since mcp ~1.9, and older installs
+# must keep working as long as they don't use the streamable-http transport.
+try:
+    from mcp.client.streamable_http import streamablehttp_client
+except ImportError:
+    streamablehttp_client = None
+
 from pydantic import AnyUrl  # mcp depends on pydantic, so it's available whenever the import above succeeds
 
 from dataclasses import dataclass, field
@@ -57,18 +65,20 @@ class MCPServerConfig:
     """Configuration for a single MCP server.
 
     For stdio transport set ``type="stdio"`` and provide ``command`` / ``args`` / ``env``.
-    For SSE/HTTP transport set ``type="sse"`` and provide ``url`` / ``headers``.
+    For Streamable HTTP (the current standard HTTP transport) set
+    ``type="streamable-http"`` and provide ``url`` / ``headers``.
+    For the legacy HTTP+SSE transport set ``type="sse"`` and provide ``url`` / ``headers``.
 
     Attributes:
-        type: Transport type — ``"stdio"`` or ``"sse"``.
+        type: Transport type — ``"stdio"``, ``"streamable-http"`` or ``"sse"``.
         command: Executable to launch (stdio only).
         args: Command-line arguments (stdio only).
         env: Environment variables to pass to the subprocess (stdio only).
-        url: SSE endpoint URL (sse only).
-        headers: HTTP headers to send with the SSE connection (sse only).
+        url: Server endpoint URL (streamable-http / sse).
+        headers: HTTP headers to send with the connection (streamable-http / sse).
     """
 
-    type: str  # "stdio" or "sse"
+    type: str  # "stdio", "streamable-http" or "sse"
     command: Optional[str] = None
     args: list[str] = field(default_factory=list)
     env: Optional[dict[str, str]] = None
@@ -128,12 +138,12 @@ class MCPToolProvider(AgentTools):
 
         provider = await MCPToolProvider.create([
             MCPServerConfig(type="stdio", command="uvx", args=["my-server"]),
-            MCPServerConfig(type="sse", url="http://localhost:3000/sse"),
+            MCPServerConfig(type="streamable-http", url="http://localhost:3000/mcp"),
         ])
         tool_config={"tool": provider}
 
     Call :meth:`disconnect` when the provider is no longer needed to cleanly
-    shut down stdio child processes or SSE connections.
+    shut down stdio child processes or HTTP connections.
 
     Args:
         servers: List of :class:`MCPServerConfig` describing the MCP servers to
@@ -207,13 +217,23 @@ class MCPToolProvider(AgentTools):
                 if not server_cfg.url:
                     raise ValueError("MCPServerConfig with type='sse' requires a 'url'")
                 cm = sse_client(server_cfg.url, headers=server_cfg.headers or {})
+            elif server_cfg.type == "streamable-http":
+                if streamablehttp_client is None:
+                    raise ImportError(
+                        "The streamable-http transport requires mcp>=1.9. "
+                        "Upgrade it with: pip install -U 'mcp>=1.9,<2'"
+                    )
+                if not server_cfg.url:
+                    raise ValueError("MCPServerConfig with type='streamable-http' requires a 'url'")
+                cm = streamablehttp_client(server_cfg.url, headers=server_cfg.headers or {})
             else:
                 raise ValueError(
                     f"Unsupported MCPServerConfig type: '{server_cfg.type}'. "
-                    "Use 'stdio' or 'sse'."
+                    "Use 'stdio', 'streamable-http' or 'sse'."
                 )
 
-            read, write = await cm.__aenter__()
+            # stdio/sse yield (read, write); streamable-http yields (read, write, get_session_id)
+            read, write, *_ = await cm.__aenter__()
             self._cm_stack.append(cm)
 
             session = ClientSession(read, write)
