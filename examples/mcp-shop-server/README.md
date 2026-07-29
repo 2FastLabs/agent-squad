@@ -4,11 +4,16 @@ A tiny [MCP](https://modelcontextprotocol.io) server for the [ChatGPTStyleChat](
 Swift sample. It exposes an order-lookup tool that advertises a **UI widget**, over streamable HTTP,
 so the native app can point at it instead of its built-in in-app tool.
 
+Built on `mcp` 2.x, so it serves MCP protocol **2026-07-28** and still answers older clients
+through the legacy handshake — the same server works for every consumer below, old or new.
+
 It shows the same contract ChatGPT Apps use: a tool returns `structuredContent` and advertises
 `_meta.ui.resourceUri`. The app renders that widget as a native SwiftUI card, hydrated from the
 tool's data — no HTML, no web view.
 
 ## Run it
+
+Requires Python >= 3.10 (the `mcp` 2.x floor).
 
 ```bash
 # Optional: Set up a virtual environment
@@ -17,6 +22,31 @@ source venv/bin/activate  # On Windows use `venv\Scripts\activate`
 pip install -r requirements.txt
 python shop_server.py                   # serves on http://127.0.0.1:8000/mcp (loopback)
 HOST=0.0.0.0 python shop_server.py      # bind to the LAN, for a physical device
+```
+
+## Consume it from agent-squad (TypeScript / Python)
+
+`MCPToolProvider` connects over the `streamable-http` transport; the protocol era is negotiated
+per server, so nothing else is configured. With the v2 SDKs installed
+(`@modelcontextprotocol/client` / `mcp>=2`) the session runs on protocol 2026-07-28; with the v1
+SDKs it falls back to the legacy handshake — same code either way.
+
+```typescript
+import { MCPToolProvider } from "agent-squad";
+
+const provider = await MCPToolProvider.create([
+  { type: "streamable-http", url: "http://127.0.0.1:8000/mcp" },
+]);
+// get_order is offered to the model; refresh_order stays app-only.
+```
+
+```python
+from agent_squad.tools import MCPToolProvider, MCPServerConfig
+
+provider = await MCPToolProvider.create([
+    MCPServerConfig(type="streamable-http", url="http://127.0.0.1:8000/mcp"),
+])
+# get_order is offered to the model; refresh_order stays app-only.
 ```
 
 ## Point the app at it

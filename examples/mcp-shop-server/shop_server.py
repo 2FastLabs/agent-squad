@@ -1,7 +1,7 @@
 """A tiny MCP shop server for the ChatGPTStyleChat sample.
 
 Exposes an order-lookup tool that advertises a UI widget, over streamable HTTP so a native app
-(the Swift ChatGPTStyleChat sample) can point at it with `MCPServer(url: "http://…/mcp")`.
+(the Swift ChatGPTStyleChat sample) can point at it with AgentSquadMCP's `MCPServer(url: "http://…/mcp")`.
 
     pip install -r requirements.txt
     python shop_server.py            # serves on http://127.0.0.1:8000/mcp
@@ -20,19 +20,17 @@ advertised resource when a tool advertises one.
 
 import os
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server import MCPServer
 from pydantic import BaseModel
 
 ORDER_CARD_URI = "ui://shop/order-card"
 
-# Loopback by default (Simulator reaches it). For a physical device, bind to the LAN with
-# `HOST=0.0.0.0 python shop_server.py` and point the app at your Mac's LAN IP.
-mcp = FastMCP("shop", host=os.environ.get("HOST", "127.0.0.1"), port=int(os.environ.get("PORT", "8000")))
+mcp = MCPServer("shop")
 
 
 class Order(BaseModel):
-    """The order shape. A typed return makes FastMCP emit it as `structuredContent` — the render-only
-    data the native card hydrates from."""
+    """The order shape. A typed return makes the server emit it as `structuredContent` — the
+    render-only data the native card hydrates from."""
 
     orderId: str
     status: str
@@ -81,4 +79,10 @@ def order_card_resource() -> str:
 
 
 if __name__ == "__main__":
-    mcp.run(transport="streamable-http")
+    # Loopback by default (Simulator reaches it). For a physical device, bind to the LAN with
+    # `HOST=0.0.0.0 python shop_server.py` and point the app at your Mac's LAN IP.
+    mcp.run(
+        transport="streamable-http",
+        host=os.environ.get("HOST", "127.0.0.1"),
+        port=int(os.environ.get("PORT", "8000")),
+    )
