@@ -1,4 +1,4 @@
-chainlit==2.9.4
+chainlit==2.12.0
 agent_squad
 ollama==0.3.3
-pydantic==2.10.1
+pydantic==2.11.0
