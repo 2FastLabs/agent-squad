@@ -204,6 +204,8 @@ import Testing
     @Test func decodesTheHandledEventSet() {
         #expect(RealtimeWire.decode(#"{"type":"input_audio_buffer.speech_started"}"#) == .speechStarted)
         #expect(RealtimeWire.decode(#"{"type":"conversation.item.input_audio_transcription.completed","transcript":"hello"}"#) == .userTranscriptCompleted("hello"))
+        #expect(RealtimeWire.decode(#"{"type":"conversation.item.input_audio_transcription.failed","error":{"code":"model_not_found","message":"transcription model unavailable"}}"#)
+            == .userTranscriptFailed(code: "model_not_found", message: "transcription model unavailable"))
         #expect(RealtimeWire.decode(#"{"type":"response.function_call_arguments.done","response_id":"r1","call_id":"c1","name":"odds","arguments":"{}"}"#)
             == .functionCallArguments(responseId: "r1", callId: "c1", name: "odds", arguments: "{}"))
         #expect(RealtimeWire.decode(#"{"type":"response.output_item.added","item":{"type":"function_call","call_id":"c1","name":"odds"}}"#)
