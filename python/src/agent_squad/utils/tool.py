@@ -325,11 +325,13 @@ class AgentTools:
         return None
 
     async def _process_tool(self, tool_name, input_data):
-        try:
-            tool = next(tool for tool in self.tools if tool.name == tool_name)
-            return await tool.func(**input_data)
-        except StopIteration:
+        tool = next((tool for tool in self.tools if tool.name == tool_name), None)
+        if tool is None:
             return f"Tool '{tool_name}' not found"
+        try:
+            return await tool.func(**input_data)
+        except Exception as e:
+            return f"Error processing tool '{tool_name}': {e}"
 
     def to_claude_format(self) -> list[dict[str, Any]]:
         """Convert all tools to Claude format"""
