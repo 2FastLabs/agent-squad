@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 from typing import Dict, Any
 
 from agent_squad.types import ConversationMessage, ParticipantRole
@@ -215,6 +215,23 @@ class TestComprehendFilterAgent(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(agent.sentiment_threshold, 0.5)
         self.assertEqual(agent.toxicity_threshold, 0.8)
+
+    @patch('agent_squad.agents.comprehend_filter_agent.boto3.client')
+    async def test_default_client_creation_without_client(self, mock_boto_client):
+        """When no client is provided, a comprehend client should be created."""
+        created_client = Mock()
+        mock_boto_client.return_value = created_client
+
+        agent = ComprehendFilterAgent(
+            ComprehendFilterAgentOptions(
+                name="Test Filter Agent",
+                description="Test agent for filtering content",
+                client=None,
+            )
+        )
+
+        mock_boto_client.assert_called_once_with('comprehend')
+        self.assertEqual(agent.comprehend_client, created_client)
 
 if __name__ == '__main__':
     unittest.main()
