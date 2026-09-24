@@ -269,6 +269,9 @@ enum RealtimeWire {
         if type.contains("input_audio_transcription") {
             if type.hasSuffix(".delta") { return .userTranscriptDelta(event.delta ?? "") }
             if type.hasSuffix(".completed") { return .userTranscriptCompleted(event.transcript ?? "") }
+            if type.hasSuffix(".failed") {
+                return .userTranscriptFailed(code: event.error?.code, message: event.error?.message)
+            }
         }
         if type.hasSuffix("output_audio_transcript.delta") {
             return .audioTranscriptDelta(responseId: event.responseId ?? "", text: event.delta ?? "")
@@ -378,6 +381,7 @@ enum ServerEvent: Sendable, Equatable {
     case speechStarted
     case userTranscriptDelta(String)
     case userTranscriptCompleted(String)
+    case userTranscriptFailed(code: String?, message: String?)
     case functionCallNamed(callId: String, name: String)
     case functionCallArguments(responseId: String, callId: String, name: String?, arguments: String)
     case outputTextDelta(responseId: String, text: String)

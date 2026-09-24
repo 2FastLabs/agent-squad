@@ -198,6 +198,11 @@ public actor OpenAIVoiceAssistant: OpenAIRealtimeSession, VoiceAssistant {
         case .userTranscriptCompleted(let text):
             userText = text
             emit(.userTranscript(text, final: true))
+        case .userTranscriptFailed(let code, let message):
+            let detail = message ?? code ?? "transcription failed"
+            if turnSpan == nil { turnSpan = openTurnSpan() }
+            turnSpan?.setMetadata(.object(["input_transcription_error": .string(detail)]))
+            emit(.userTranscript("", final: true))
         case .functionCallNamed(let callId, let name):
             fnNames[callId] = name
         case .functionCallArguments(let responseId, let callId, let name, let arguments):

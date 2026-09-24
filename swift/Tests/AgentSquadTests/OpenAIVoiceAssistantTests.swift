@@ -22,6 +22,21 @@ import Testing
         #expect(sess["tools"] != nil)                                   // MCP/native tools advertised
     }
 
+    @Test func transcriptionFailureClosesUserBubbleAndRecordsMetadata() async throws {
+        let transport = MockRealtimeTransport()
+        let log = EventLog()
+        let tracer = RecordingTracer()
+        let session = session(transport, tracer: tracer)
+        log.start(session)
+        try await session.start()
+
+        transport.push(responseCreated("r1"))
+        transport.push(#"{"type":"conversation.item.input_audio_transcription.failed","error":{"code":"model_not_found","message":"transcription model unavailable"}}"#)
+
+        await eventually { log.all.contains { if case .userTranscript("", true) = $0 { return true }; return false } }
+        #expect(tracer.recorder.metadata("voice.turn") == .object(["input_transcription_error": .string("transcription model unavailable")]))
+    }
+
     @Test func typedTurnRequestsATextOnlyReply() async throws {
         let transport = MockRealtimeTransport()
         let session = session(transport)   // audio session by default
