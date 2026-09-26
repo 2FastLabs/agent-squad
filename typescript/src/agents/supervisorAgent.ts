@@ -108,9 +108,22 @@ export class SupervisorAgent extends Agent {
       this.supervisorTools.tools.push(...additionalTools);
     }
 
+    const self = this;
     this.leadAgent.toolConfig = {
       tool: this.supervisorTools,
       toolMaxRecursions: SupervisorAgent.DEFAULT_TOOL_MAX_RECURSIONS,
+      useToolHandler: async (response: any, _conversation: ConversationMessage[]) => {
+        // Delegate to AgentTools.toolHandler with the required getter methods
+        // This ensures proper tool dispatch for streaming and non-streaming paths
+        const leadAgent = self.leadAgent as any;
+        return self.supervisorTools.toolHandler(
+          response,
+          leadAgent.getToolUseBlock.bind(leadAgent),
+          leadAgent.getToolName.bind(leadAgent),
+          leadAgent.getToolId.bind(leadAgent),
+          leadAgent.getInputData.bind(leadAgent)
+        );
+      },
     };
   }
 
