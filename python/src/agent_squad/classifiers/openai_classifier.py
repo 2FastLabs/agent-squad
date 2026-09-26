@@ -12,10 +12,12 @@ class OpenAIClassifierOptions:
     def __init__(self,
                  api_key: str,
                  model_id: Optional[str] = None,
-                 inference_config: Optional[Dict[str, Any]] = None):
+                 inference_config: Optional[Dict[str, Any]] = None,
+                 client: Optional[Any] = None):
         self.api_key = api_key
         self.model_id = model_id
         self.inference_config = inference_config or {}
+        self.client = client
 
 class OpenAIClassifier(Classifier):
     def __init__(self, options: OpenAIClassifierOptions):
@@ -24,7 +26,11 @@ class OpenAIClassifier(Classifier):
         if not options.api_key:
             raise ValueError("OpenAI API key is required")
 
-        self.client = OpenAI(api_key=options.api_key)
+        if options.client:
+            self.client = options.client
+        else:
+            self.client = OpenAI(api_key=options.api_key)
+
         self.model_id = options.model_id or OPENAI_MODEL_ID_GPT_O_MINI
 
         default_max_tokens = 1000
