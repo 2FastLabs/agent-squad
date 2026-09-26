@@ -10,6 +10,6 @@
   "license": "ISC",
   "dependencies": {
     "dotenv": "^16.4.5",
-    "agent-squad": "^0.0.17"
+    "agent-squad": "^1.0.0"
   }
 }

@@ -32,7 +32,7 @@
     "axios": "^1.13.5",
     "constructs": "^10.0.0",
     "esbuild": "^0.24.0",
-    "agent-squad": "^0.0.14",
+    "agent-squad": "^1.0.0",
     "source-map-support": "^0.5.21"
   }
 }
