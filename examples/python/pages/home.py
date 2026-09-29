@@ -11,6 +11,16 @@ showing how the framework can be applied to various business scenarios. 🤖✨
 
 ## 🎮 Featured Demos
 
+### 💬 Chat Demo
+**Requirements**: AWS Account with Amazon Bedrock access (Claude models enabled)
+
+Experience intelligent agent routing in action! Chat with multiple specialized agents:
+- **Tech Agent** ([BedrockLLMAgent](https://awslabs.github.io/agent-squad/agents/built-in/bedrock-llm-agent)): Answers technology and programming questions
+- **Health Agent** ([BedrockLLMAgent](https://awslabs.github.io/agent-squad/agents/built-in/bedrock-llm-agent)): Provides wellness and health information
+- **Weather Agent** ([BedrockLLMAgent](https://awslabs.github.io/agent-squad/agents/built-in/bedrock-llm-agent) with tools): Gets current weather for any city
+- **Math Agent** ([BedrockLLMAgent](https://awslabs.github.io/agent-squad/agents/built-in/bedrock-llm-agent) with tools): Performs calculations and explains math
+- Automatically routed by [**BedrockClassifier**](https://awslabs.github.io/agent-squad/classifiers/built-in/bedrock-classifier)
+
 ### 🎬 AI Movie Production Studio
 **Requirements**: AWS Account with Amazon Bedrock access (Claude models enabled)
 
