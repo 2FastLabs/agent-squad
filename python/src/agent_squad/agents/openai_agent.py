@@ -164,11 +164,14 @@ class OpenAIAgent(Agent):
             raise error
 
     async def handle_streaming_response(self, request_options: dict[str, Any]) -> AsyncGenerator[AgentStreamResponse, None]:
+        """Yield text and the final message, skipping chunks without completion choices."""
         try:
             stream = self.client.chat.completions.create(**request_options)
             accumulated_message = []
 
             for chunk in stream:
+                if not chunk.choices:
+                    continue
                 if chunk.choices[0].delta.content:
                     chunk_content = chunk.choices[0].delta.content
                     accumulated_message.append(chunk_content)
