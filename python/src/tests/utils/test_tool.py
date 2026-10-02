@@ -473,14 +473,25 @@ def test_tool_with_properties():
 
 @pytest.mark.asyncio
 async def test_tool_not_found():
-    try:
-        tools = AgentTools([AgentTool(
-            name="weather",
-            func=fetch_weather_data
-        )])
-        await tools._process_tool("test", {'test':'value'})
-    except Exception as e:
-        assert str(e) == f"Tool weather not found"
+    tools = AgentTools([AgentTool(
+        name="weather",
+        func=fetch_weather_data
+    )])
+    result = await tools._process_tool("test", {'test': 'value'})
+    assert result == "Tool 'test' not found"
+
+
+@pytest.mark.asyncio
+async def test_tool_processing_error():
+    async def failing_tool(value: str):
+        raise ValueError("boom")
+
+    tools = AgentTools([AgentTool(
+        name="failing",
+        func=failing_tool
+    )])
+    result = await tools._process_tool("failing", {'value': 'x'})
+    assert result == "Error processing tool 'failing': boom"
 
 
 def test_get_tool_use_block():
