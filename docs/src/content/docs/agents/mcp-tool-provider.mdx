@@ -171,6 +171,60 @@ Requires `mcp` >= 1.9 (already satisfied by a fresh `pip install "agent-squad[mc
   </TabItem>
 </Tabs>
 
+### Hosted web search without a Parallel API key
+
+[Parallel Search MCP](https://docs.parallel.ai/integrations/mcp/search-mcp) provides `web_search` and `web_fetch` over Streamable HTTP. Its anonymous endpoint is free and rate limited, so you can try a hosted server without running a local process or creating a Parallel account.
+
+<Tabs syncKey="runtime">
+  <TabItem label="TypeScript" icon="seti:typescript" color="blue">
+```typescript
+import { MCPToolProvider } from "agent-squad";
+
+const provider = await MCPToolProvider.create([
+  {
+    type: "streamable-http",
+    url: "https://search.parallel.ai/mcp",
+    // Identify the calling project for aggregate MCP usage measurement.
+    headers: { "User-Agent": "agent-squad" },
+  },
+]);
+
+try {
+  console.log((await provider.toAnthropicFormat()).map((tool) => tool.name));
+  // Use this provider as toolConfig.tool, as shown in Basic usage.
+  // Keep the connection open until the agent has finished using its tools.
+} finally {
+  await provider.disconnect();
+}
+```
+  </TabItem>
+  <TabItem label="Python" icon="seti:python">
+```python
+from agent_squad.tools import MCPToolProvider, MCPServerConfig
+
+provider = await MCPToolProvider.create([
+    MCPServerConfig(
+        type="streamable-http",
+        url="https://search.parallel.ai/mcp",
+        # Identify the calling project for aggregate MCP usage measurement.
+        headers={"User-Agent": "agent-squad"},
+    ),
+])
+
+try:
+    print([tool["name"] for tool in provider.to_anthropic_format()])
+    # Use this provider as tool_config["tool"], as shown in Basic usage.
+    # Keep the connection open until the agent has finished using its tools.
+finally:
+    await provider.disconnect()
+```
+  </TabItem>
+</Tabs>
+
+Use the MCP dependencies from [Installation](#installation). The Python snippet runs inside an async function. An LLM agent still needs its usual model-provider configuration; the keyless connection applies to Parallel's MCP endpoint.
+
+When connected to an agent, these tools can send queries, requested URLs, and supplied objectives or context to Parallel. The `User-Agent` header identifies Agent Squad for aggregate usage measurement and contains no user or installation identifier. See the [service documentation](https://docs.parallel.ai/integrations/mcp/search-mcp) for limits and authenticated access.
+
 ### SSE — connect to a legacy remote server
 
 Connect to an MCP server running over HTTP Server-Sent Events (SSE). This is the older HTTP transport, deprecated by the MCP spec since 2025-03-26 — prefer `streamable-http` for servers that support it.
