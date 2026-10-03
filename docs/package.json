@@ -23,9 +23,9 @@
   },
   "license": "Apache-2.0",
   "dependencies": {
-    "@astrojs/starlight": "^0.38.5",
-    "astro": "^6.4.8",
-    "sharp": "^0.33.4",
+    "@astrojs/starlight": "^0.42.0",
+    "astro": "^7.3.2",
+    "sharp": "^0.35.4",
     "shiki": "^1.10.3",
     "starlight-sidebar-topics": "^0.6.2",
     "starlight-theme-rapide": "^0.5.2"
