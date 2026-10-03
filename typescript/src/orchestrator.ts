@@ -85,6 +85,15 @@ export interface AgentSquadConfig {
    * If MAX_MESSAGE_PAIRS_PER_AGENT is 5, up to 10 messages (5 pairs) will be stored per agent.
    */
   MAX_MESSAGE_PAIRS_PER_AGENT?: number;
+
+  /** Maximum number of chunks accepted from a streaming agent response. */
+  MAX_STREAM_CHUNKS?: number;
+
+  /** Maximum number of bytes accepted from a streaming agent response. */
+  MAX_STREAM_BYTES?: number;
+
+  /** Maximum number of text bytes retained for conversation storage. */
+  MAX_ACCUMULATED_RESPONSE_BYTES?: number;
 }
 
 export const DEFAULT_CONFIG: AgentSquadConfig = {
@@ -121,6 +130,15 @@ export const DEFAULT_CONFIG: AgentSquadConfig = {
 
   /** Default: Maximum of 100 message pairs (200 individual messages) to retain per agent */
   MAX_MESSAGE_PAIRS_PER_AGENT: 100,
+
+  /** Default: bound streaming responses to prevent unbounded resource usage */
+  MAX_STREAM_CHUNKS: 10000,
+
+  /** Default: bound streaming responses to 10 MiB */
+  MAX_STREAM_BYTES: 10 * 1024 * 1024,
+
+  /** Default: retain at most 10 MiB of response text */
+  MAX_ACCUMULATED_RESPONSE_BYTES: 10 * 1024 * 1024,
 };
 
 export interface DispatchToAgentsParams {
@@ -183,7 +201,7 @@ export interface RequestMetadata {
 export type ThinkingResponse = {
   content: string;
   thinking: string;
-}
+};
 
 export class AgentSquad {
   private config: AgentSquadConfig;
@@ -216,6 +234,13 @@ export class AgentSquad {
       MAX_MESSAGE_PAIRS_PER_AGENT:
         options.config?.MAX_MESSAGE_PAIRS_PER_AGENT ??
         DEFAULT_CONFIG.MAX_MESSAGE_PAIRS_PER_AGENT,
+      MAX_STREAM_CHUNKS:
+        options.config?.MAX_STREAM_CHUNKS ?? DEFAULT_CONFIG.MAX_STREAM_CHUNKS,
+      MAX_STREAM_BYTES:
+        options.config?.MAX_STREAM_BYTES ?? DEFAULT_CONFIG.MAX_STREAM_BYTES,
+      MAX_ACCUMULATED_RESPONSE_BYTES:
+        options.config?.MAX_ACCUMULATED_RESPONSE_BYTES ??
+        DEFAULT_CONFIG.MAX_ACCUMULATED_RESPONSE_BYTES,
       USE_DEFAULT_AGENT_IF_NONE_IDENTIFIED:
         options.config?.USE_DEFAULT_AGENT_IF_NONE_IDENTIFIED ??
         DEFAULT_CONFIG.USE_DEFAULT_AGENT_IF_NONE_IDENTIFIED,
@@ -265,7 +290,7 @@ export class AgentSquad {
       Object.entries(this.agents).map(([key, { name, description }]) => [
         key,
         { name, description },
-      ])
+      ]),
     );
   }
 
@@ -274,7 +299,7 @@ export class AgentSquad {
   }
 
   async dispatchToAgent(
-    params: DispatchToAgentsParams
+    params: DispatchToAgentsParams,
   ): Promise<string | AsyncIterable<any> | ThinkingResponse> {
     const {
       userInput,
@@ -292,13 +317,13 @@ export class AgentSquad {
         const agentChatHistory = await this.storage.fetchChat(
           userId,
           sessionId,
-          selectedAgent.id
+          selectedAgent.id,
         );
 
         this.logger.printChatHistory(agentChatHistory, selectedAgent.id);
 
         this.logger.info(
-          `Routing intent "${userInput}" to ${selectedAgent.id} ...`
+          `Routing intent "${userInput}" to ${selectedAgent.id} ...`,
         );
 
         const response = await this.measureExecutionTime(
@@ -309,8 +334,8 @@ export class AgentSquad {
               userId,
               sessionId,
               agentChatHistory,
-              additionalParams
-            )
+              additionalParams,
+            ),
         );
 
         //if (this.isStream(response)) {
@@ -337,8 +362,9 @@ export class AgentSquad {
 
           if (thinkingParts.length > 0) {
             return {
-              content: contentParts.join(''), thinking: thinkingParts.join('')
-            }
+              content: contentParts.join(""),
+              thinking: thinkingParts.join(""),
+            };
           }
           responseText = contentParts.join("");
         }
@@ -353,14 +379,14 @@ export class AgentSquad {
   async classifyRequest(
     userInput: string,
     userId: string,
-    sessionId: string
+    sessionId: string,
   ): Promise<ClassifierResult> {
     try {
       const chatHistory =
         (await this.storage.fetchAllChats(userId, sessionId)) || [];
       const classifierResult = await this.measureExecutionTime(
         "Classifying user intent",
-        () => this.classifier.classify(userInput, chatHistory)
+        () => this.classifier.classify(userInput, chatHistory),
       );
 
       this.logger.printIntent(userInput, classifierResult);
@@ -387,7 +413,7 @@ export class AgentSquad {
     userId: string,
     sessionId: string,
     classifierResult: ClassifierResult,
-    additionalParams: Record<any, any> = {}
+    additionalParams: Record<any, any> = {},
   ): Promise<AgentResponse> {
     try {
       const agentResponse = await this.dispatchToAgent({
@@ -403,18 +429,21 @@ export class AgentSquad {
         userInput,
         userId,
         sessionId,
-        additionalParams
+        additionalParams,
       );
 
       if (this.isAsyncIterable(agentResponse)) {
-        const accumulatorTransform = new AccumulatorTransform();
-        this.processStreamInBackground(
+        const accumulatorTransform = new AccumulatorTransform({
+          maxAccumulatedResponseBytes:
+            this.config.MAX_ACCUMULATED_RESPONSE_BYTES,
+        });
+        void this.processStreamInBackground(
           agentResponse,
           accumulatorTransform,
           userInput,
           userId,
           sessionId,
-          classifierResult.selectedAgent
+          classifierResult.selectedAgent,
         );
         return {
           metadata,
@@ -423,7 +452,9 @@ export class AgentSquad {
         };
       }
 
-      const response: string = (agentResponse as ThinkingResponse).content || agentResponse as string;
+      const response: string =
+        (agentResponse as ThinkingResponse).content ||
+        (agentResponse as string);
       if (classifierResult?.selectedAgent.saveChat) {
         await saveConversationExchange(
           userInput,
@@ -432,7 +463,7 @@ export class AgentSquad {
           userId,
           sessionId,
           classifierResult?.selectedAgent.id,
-          this.config.MAX_MESSAGE_PAIRS_PER_AGENT
+          this.config.MAX_MESSAGE_PAIRS_PER_AGENT,
         );
       }
 
@@ -440,7 +471,7 @@ export class AgentSquad {
         metadata,
         output: response,
         streaming: false,
-        thinking: (agentResponse as ThinkingResponse).thinking
+        thinking: (agentResponse as ThinkingResponse).thinking,
       };
     } catch (error) {
       this.logger.error("Error during agent processing:", error);
@@ -452,7 +483,7 @@ export class AgentSquad {
     userInput: string,
     userId: string,
     sessionId: string,
-    additionalParams: Record<any, any> = {}
+    additionalParams: Record<any, any> = {},
   ): Promise<AgentResponse> {
     this.executionTimes = new Map();
 
@@ -460,7 +491,7 @@ export class AgentSquad {
       const classifierResult = await this.classifyRequest(
         userInput,
         userId,
-        sessionId
+        sessionId,
       );
 
       if (!classifierResult.selectedAgent) {
@@ -470,7 +501,7 @@ export class AgentSquad {
             userInput,
             userId,
             sessionId,
-            additionalParams
+            additionalParams,
           ),
           output: this.config.NO_SELECTED_AGENT_MESSAGE!,
           streaming: false,
@@ -482,7 +513,7 @@ export class AgentSquad {
         userId,
         sessionId,
         classifierResult,
-        additionalParams
+        additionalParams,
       );
     } catch (error) {
       return {
@@ -491,7 +522,7 @@ export class AgentSquad {
           userInput,
           userId,
           sessionId,
-          additionalParams
+          additionalParams,
         ),
         output: this.config.GENERAL_ROUTING_ERROR_MSG_MESSAGE || String(error),
         streaming: false,
@@ -507,58 +538,174 @@ export class AgentSquad {
     userInput: string,
     userId: string,
     sessionId: string,
-    agent: Agent
+    agent: Agent,
   ): Promise<void> {
     const streamStartTime = Date.now();
     let chunkCount = 0;
+    let streamBytes = 0;
+    let completed = false;
+    let cancelled = false;
+    let iteratorClosed = false;
+    let iteratorClosePromise: Promise<unknown> | undefined;
+    let resolveCancellation!: () => void;
+    const cancellation = new Promise<void>((resolve) => {
+      resolveCancellation = resolve;
+    });
+    const iterator = agentResponse[Symbol.asyncIterator]();
+    const closeIterator = () => {
+      if (iteratorClosed) {
+        return;
+      }
+      iteratorClosed = true;
+      iteratorClosePromise = Promise.resolve()
+        .then(() => iterator.return?.())
+        .catch((error) => {
+          this.logger.error("Error closing streaming response:", error);
+        });
+    };
+    const handleClose = () => {
+      if (!completed) {
+        cancelled = true;
+        resolveCancellation();
+        closeIterator();
+      }
+    };
+
+    accumulatorTransform.once("close", handleClose);
 
     try {
-      for await (const chunk of agentResponse) {
+      while (!cancelled) {
+        const nextResult = Promise.resolve().then(() => iterator.next());
+        // A provider may reject after cancellation wins the race; consume that rejection.
+        void nextResult.catch(() => undefined);
+        const result = await Promise.race([
+          nextResult,
+          cancellation.then(() => ({ done: true, value: undefined })),
+        ]);
+
+        if (cancelled || result.done) {
+          break;
+        }
+
+        const chunkBytes = this.getChunkByteLength(result.value);
+        if (
+          chunkCount >= this.config.MAX_STREAM_CHUNKS! ||
+          streamBytes + chunkBytes > this.config.MAX_STREAM_BYTES!
+        ) {
+          throw new Error("Streaming response exceeded configured limits");
+        }
+
         if (chunkCount === 0) {
           const firstChunkTime = Date.now();
           const timeToFirstChunk = firstChunkTime - streamStartTime;
           this.executionTimes.set("Time to first chunk", timeToFirstChunk);
           this.logger.printExecutionTimes(this.executionTimes);
         }
-        accumulatorTransform.write(chunk);
+        streamBytes += chunkBytes;
+        const writeAccepted = await new Promise<boolean>((resolve, reject) => {
+          let accepted = false;
+          accepted = accumulatorTransform.write(result.value, (error) => {
+            if (error) {
+              reject(error);
+            } else {
+              resolve(accepted);
+            }
+          });
+        });
+        if (!writeAccepted && !cancelled) {
+          await this.waitForStreamDrainOrCancellation(
+            accumulatorTransform,
+            cancellation,
+          );
+        }
         chunkCount++;
       }
 
+      if (cancelled) {
+        this.logger.debug(
+          `\nStreaming cancelled after ${chunkCount} chunks received`,
+        );
+        return;
+      }
+
+      completed = true;
       accumulatorTransform.end();
       this.logger.debug(`\nStreaming completed: ${chunkCount} chunks received`);
 
       const fullResponse = accumulatorTransform.getAccumulatedData();
-      if (fullResponse) {
-        if (agent.saveChat) {
-          await saveConversationExchange(
-            userInput,
-            fullResponse,
-            this.storage,
-            userId,
-            sessionId,
-            agent.id,
-            this.config.MAX_MESSAGE_PAIRS_PER_AGENT
-          );
-        }
-      } else {
+      if (fullResponse && agent.saveChat) {
+        await saveConversationExchange(
+          userInput,
+          fullResponse,
+          this.storage,
+          userId,
+          sessionId,
+          agent.id,
+          this.config.MAX_MESSAGE_PAIRS_PER_AGENT,
+        );
+      } else if (!fullResponse) {
         this.logger.warn("No data accumulated, messages not saved");
       }
     } catch (error) {
-      this.logger.error("Error processing stream:", error);
-      accumulatorTransform.end();
-      if (error instanceof Error) {
-        accumulatorTransform.destroy(error);
-      } else if (typeof error === "string") {
-        accumulatorTransform.destroy(new Error(error));
-      } else {
-        accumulatorTransform.destroy(new Error("An unknown error occurred"));
+      if (cancelled) {
+        return;
       }
+      this.logger.error("Error processing stream:", error);
+      closeIterator();
+      accumulatorTransform.destroy(
+        error instanceof Error
+          ? error
+          : new Error(
+              typeof error === "string" ? error : "An unknown error occurred",
+            ),
+      );
+    } finally {
+      accumulatorTransform.removeListener("close", handleClose);
+      if (iteratorClosed && iteratorClosePromise) {
+        await iteratorClosePromise;
+      }
+    }
+  }
+
+  private waitForStreamDrainOrCancellation(
+    accumulatorTransform: AccumulatorTransform,
+    cancellation: Promise<void>,
+  ): Promise<void> {
+    return new Promise((resolve) => {
+      let settled = false;
+      const onDrain = () => finish(resolve);
+      const cleanup = () => {
+        accumulatorTransform.removeListener("drain", onDrain);
+      };
+      const finish = (callback: () => void) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        cleanup();
+        callback();
+      };
+
+      accumulatorTransform.once("drain", onDrain);
+      cancellation.then(() => finish(resolve));
+    });
+  }
+
+  private getChunkByteLength(chunk: unknown): number {
+    if (typeof chunk === "string") {
+      return Buffer.byteLength(chunk);
+    }
+
+    try {
+      return Buffer.byteLength(JSON.stringify(chunk) ?? "");
+    } catch {
+      return Buffer.byteLength(String(chunk));
     }
   }
 
   private measureExecutionTime<T>(
     timerName: string,
-    fn: () => Promise<T> | T
+    fn: () => Promise<T> | T,
   ): Promise<T> {
     if (!this.config.LOG_EXECUTION_TIMES) {
       return Promise.resolve(fn());
@@ -579,7 +726,7 @@ export class AgentSquad {
         const duration = endTime - startTime;
         this.executionTimes.set(timerName, duration);
         throw error;
-      }
+      },
     );
   }
 
@@ -588,7 +735,7 @@ export class AgentSquad {
     userInput: string,
     userId: string,
     sessionId: string,
-    additionalParams: Record<string, string>
+    additionalParams: Record<string, string>,
   ): RequestMetadata {
     const baseMetadata = {
       userInput,
