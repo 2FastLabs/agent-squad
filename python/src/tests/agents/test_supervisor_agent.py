@@ -103,6 +103,24 @@ async def test_supervisor_agent_initialization(mock_boto3_client):
     assert isinstance(agent.supervisor_tools, AgentTools)
 
 @pytest.mark.asyncio
+async def test_supervisor_agent_preserves_custom_name_and_description(mock_boto3_client):
+    """Custom name/description on SupervisorAgentOptions must not be overwritten by lead_agent values"""
+    lead_agent = MockBedrockLLMAgent(BedrockLLMAgentOptions(
+        name="Lead Agent Name",
+        description="Lead Agent Description"
+    ))
+
+    agent = SupervisorAgent(SupervisorAgentOptions(
+        name="Custom Supervisor Name",
+        description="Custom Supervisor Description",
+        lead_agent=lead_agent,
+        team=[]
+    ))
+
+    assert agent.name == "Custom Supervisor Name"
+    assert agent.description == "Custom Supervisor Description"
+
+@pytest.mark.asyncio
 async def test_supervisor_agent_validation(mock_boto3_client):
     """Test SupervisorAgent validation"""
     with pytest.raises(ValueError, match="Supervisor must be BedrockLLMAgent or AnthropicAgent"):

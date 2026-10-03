@@ -66,8 +66,8 @@ class SupervisorAgent(Agent):
 
     def __init__(self, options: SupervisorAgentOptions):
         options.validate()
-        options.name = options.lead_agent.name
-        options.description = options.lead_agent.description
+        options.name = options.name or options.lead_agent.name
+        options.description = options.description or options.lead_agent.description
         super().__init__(options)
 
         self.lead_agent: 'Union[AnthropicAgent, BedrockLLMAgent]' = options.lead_agent
