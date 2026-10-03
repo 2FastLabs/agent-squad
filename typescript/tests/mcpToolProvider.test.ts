@@ -429,14 +429,28 @@ describe("MCPToolProvider", () => {
   // SSE transport
   // -------------------------------------------------------------------------
 
-  it("creates SSEClientTransport for sse server config", async () => {
+  it("creates SSEClientTransport with headers in requestInit", async () => {
     const sseProvider = new MCPToolProvider([
       { type: "sse", url: "http://localhost:9000/sse", headers: { "x-api-key": "abc" } },
     ]);
 
     await sseProvider.ensureConnected();
-    // If we got here without error, SSE transport was constructed correctly
-    expect(mockConnect).toHaveBeenCalled();
+    expect(mockConnect).toHaveBeenCalledWith(expect.any(MockSSETransport));
+    const transport = mockConnect.mock.calls[0][0] as MockSSETransport;
+    expect(transport.url.href).toBe("http://localhost:9000/sse");
+    expect(transport.opts).toEqual({
+      requestInit: { headers: { "x-api-key": "abc" } },
+    });
+  });
+
+  it("creates SSEClientTransport without options when no headers given", async () => {
+    const sseProvider = new MCPToolProvider([
+      { type: "sse", url: "http://localhost:9000/sse" },
+    ]);
+
+    await sseProvider.ensureConnected();
+    const transport = mockConnect.mock.calls[0][0] as MockSSETransport;
+    expect(transport.opts).toBeUndefined();
   });
 
   // -------------------------------------------------------------------------

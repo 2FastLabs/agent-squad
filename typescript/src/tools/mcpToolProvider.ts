@@ -223,18 +223,13 @@ export class MCPToolProvider extends AgentTools {
             "MCPServerConfig with type 'sse' requires a 'url' field"
           );
         }
-        // v2 has no top-level `headers` option; POST-channel headers go via
-        // requestInit (GET-stream headers tracked in #640).
-        transport = usingV2
-          ? new SSEClientTransport(
-              new URL(serverConfig.url),
-              serverConfig.headers
-                ? { requestInit: { headers: serverConfig.headers } }
-                : undefined
-            )
-          : new SSEClientTransport(new URL(serverConfig.url), {
-              headers: serverConfig.headers ?? {},
-            });
+        // Both SDKs read custom headers from requestInit for SSE GET and POST.
+        transport = new SSEClientTransport(
+          new URL(serverConfig.url),
+          serverConfig.headers
+            ? { requestInit: { headers: serverConfig.headers } }
+            : undefined
+        );
       } else if (serverConfig.type === "streamable-http") {
         if (!StreamableHTTPClientTransport) {
           throw new Error(
