@@ -70,6 +70,29 @@ import { Tabs, TabItem } from '@astrojs/starlight/components';
 
 Ensure your AWS credentials are properly set up and that your application has the necessary permissions to access the DynamoDB table.
 
+### Content Filters (Python)
+
+The Python `DynamoDbChatStorage` accepts an optional `content_filters` parameter — a list of `(original, placeholder)` string pairs. Before a message is written to DynamoDB, every occurrence of `original` in its content is replaced with the corresponding `placeholder`. On every read path (`fetch_chat`, `fetch_chat_with_timestamp`, `fetch_all_chats`, and the value returned by `save_chat_message`/`save_chat_messages`), the placeholders are substituted back with their original values before the messages are handed back to your application.
+
+This lets you avoid storing sensitive strings (company names, tokens, PII, etc.) verbatim in DynamoDB while keeping the original values transparent to the rest of your application.
+
+```python
+from agent_squad.storage import DynamoDbChatStorage
+
+dynamodb_storage = DynamoDbChatStorage(
+    table_name='YourDynamoDBTableName',
+    region='your-aws-region',
+    content_filters=[
+        ('acme-corp', '#COMPANY#'),
+        ('secret-token-xyz', '#TOKEN#'),
+    ],
+)
+```
+
+- Filters are applied in list order, both when masking on save and when restoring on fetch.
+- If `content_filters` is omitted (or empty), behavior is unchanged from previous versions.
+- Filtering applies uniformly across all read paths, regardless of whether stored message content is a list of content blocks or a plain string.
+
 ## Considerations
 
 - Requires AWS account and proper IAM permissions
