@@ -280,10 +280,17 @@ class AgentTools:
             await self.callbacks.on_tool_start(
                 tool_name, input_data, metadata={"agent_info": agent_info}
             )
-            result = await self._process_tool(tool_name, input_data)
-            await self.callbacks.on_tool_end(
-                tool_name, input_data, result, metadata={"agent_info": agent_info}
-            )
+            try:
+                result = await self._process_tool(tool_name, input_data)
+            except Exception as error:
+                await self.callbacks.on_tool_error(
+                    tool_name, input_data, error, metadata={"agent_info": agent_info}
+                )
+                result = f"Error processing tool '{tool_name}': {error}"
+            else:
+                await self.callbacks.on_tool_end(
+                    tool_name, input_data, result, metadata={"agent_info": agent_info}
+                )
 
             # A ToolResult carries render-only data/UI; only its text goes to the model. Empty text
             # falls back to the structured data so the model isn't blind. Plain returns pass through.
