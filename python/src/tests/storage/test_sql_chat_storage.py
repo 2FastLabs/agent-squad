@@ -3,7 +3,7 @@ import pytest
 import tempfile
 import pytest_asyncio
 from agent_squad.storage import SqlChatStorage
-from agent_squad.types import ConversationMessage, ParticipantRole
+from agent_squad.types import ConversationMessage, ParticipantRole, TimestampedMessage
 
 # Configure pytest-asyncio to use asyncio mode
 pytestmark = pytest.mark.asyncio
@@ -372,3 +372,40 @@ async def test_database_connection_handling():
                 agent_id="test_agent",
                 new_message=message
             )
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("batch", [False, True])
+async def test_supplied_timestamps_preserve_cross_agent_order(sql_storage, batch):
+    for text, timestamp in [("newer", 2000), ("older", 1000)]:
+        message = TimestampedMessage(role="user", content=[{"text": text}], timestamp=timestamp)
+        if batch:
+            await sql_storage.save_chat_messages("u", "s", text, [message])
+        else:
+            await sql_storage.save_chat_message("u", "s", text, message)
+        message.timestamp = -1  # Saving snapshots the supplied timestamp value.
+
+    rows = await sql_storage.client.execute("SELECT timestamp FROM conversations ORDER BY timestamp")
+    assert [row["timestamp"] for row in rows] == [1000, 2000]
+    history = await sql_storage.fetch_all_chats("u", "s")
+    assert [m.content[0]["text"] for m in history] == ["older", "newer"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("plain_first", [False, True])
+async def test_batch_preserves_each_supplied_timestamp(sql_storage, plain_first):
+    messages = [
+        TimestampedMessage(role="user", content=[{"text": "newer"}], timestamp=2000),
+        TimestampedMessage(role="user", content=[{"text": "older"}], timestamp=1000),
+    ]
+    generated = ConversationMessage(role="user", content=[{"text": "generated"}])
+    messages.insert(0 if plain_first else len(messages), generated)
+    await sql_storage.save_chat_messages("u", "s", "a", messages)
+
+    rows = await sql_storage.client.execute("SELECT timestamp FROM conversations ORDER BY message_index")
+    for original, row in zip(messages, rows, strict=True):
+        if isinstance(original, TimestampedMessage):
+            assert row["timestamp"] == original.timestamp
+        else:
+            assert row["timestamp"] > 2000
+    history = await sql_storage.fetch_all_chats("u", "s")
+    assert [m.content[0]["text"] for m in history] == ["older", "newer", "generated"]

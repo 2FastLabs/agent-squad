@@ -6,6 +6,12 @@ from agent_squad.types import ConversationMessage, TimestampedMessage
 from agent_squad.utils import Logger
 
 class InMemoryChatStorage(ChatStorage):
+    """In-memory history preserving timestamps on TimestampedMessage inputs.
+
+    Ordinary ConversationMessage inputs receive save-time timestamps. Merged
+    history is sorted by the persisted timestamps.
+    """
+
     def __init__(self):
         super().__init__()
         self.conversations = defaultdict(list)
@@ -29,7 +35,8 @@ class InMemoryChatStorage(ChatStorage):
         if isinstance(new_message, ConversationMessage):
             timestamped_message = TimestampedMessage(
                 role=new_message.role,
-                content=new_message.content)
+                content=new_message.content,
+                timestamp=new_message.timestamp if isinstance(new_message, TimestampedMessage) else 0)
 
         conversation.append(timestamped_message)
 
@@ -57,7 +64,8 @@ class InMemoryChatStorage(ChatStorage):
         if isinstance(new_messages[0], ConversationMessage):  # Check only first message
             new_messages = [TimestampedMessage(
                     role=new_message.role,
-                    content=new_message.content
+                    content=new_message.content,
+                    timestamp=new_message.timestamp if isinstance(new_message, TimestampedMessage) else 0
                     )
                 for new_message in new_messages]
 
