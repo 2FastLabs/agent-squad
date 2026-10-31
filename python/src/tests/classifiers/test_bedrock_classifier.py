@@ -90,6 +90,13 @@ async def _sent_inference_config(inference_config=None):
 async def test_sampling_defaults_are_sent():
     config = await _sent_inference_config()
     assert config['temperature'] == 0.0
+    # Claude Haiku 4.5 and newer reject temperature and topP together.
+    assert 'topP' not in config
+
+
+@pytest.mark.asyncio
+async def test_top_p_is_sent_when_set():
+    config = await _sent_inference_config({'top_p': 0.9})
     assert config['topP'] == 0.9
 
 

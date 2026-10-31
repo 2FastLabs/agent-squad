@@ -98,7 +98,7 @@ python quickstart.py
 
 ## Implementation Notes
 - Implements streaming responses by default
-- Uses default Bedrock Classifier with `anthropic.claude-3-5-sonnet-20240620-v1:0`
+- Uses default Bedrock Classifier with `global.anthropic.claude-haiku-4-5-20251001-v1:0`
 - Includes interactive command-line interface
 - Handles session management with UUID generation
 

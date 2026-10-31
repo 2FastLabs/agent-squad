@@ -4,7 +4,7 @@ import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 from agent_squad.utils.helpers import is_tool_input
 from agent_squad.utils import Logger
-from agent_squad.types import ConversationMessage, ParticipantRole, BEDROCK_MODEL_ID_CLAUDE_3_5_SONNET
+from agent_squad.types import ConversationMessage, ParticipantRole, BEDROCK_MODEL_ID_CLAUDE_HAIKU_4_5
 from agent_squad.classifiers import Classifier, ClassifierResult, ClassifierCallbacks
 from agent_squad.shared import user_agent
 
@@ -36,12 +36,14 @@ class BedrockClassifier(Classifier):
         self.callbacks = options.callbacks
         user_agent.register_feature_to_client(self.client, feature="bedrock-classifier")
 
-        self.model_id = options.model_id or BEDROCK_MODEL_ID_CLAUDE_3_5_SONNET
+        self.model_id = options.model_id or BEDROCK_MODEL_ID_CLAUDE_HAIKU_4_5
         self.system_prompt: str
+        # top_p isn't set by default: Claude Haiku 4.5 and newer reject
+        # temperature and top_p in the same request.
         self.inference_config = {
             'maxTokens': options.inference_config.get('maxTokens', 1000),
             'temperature':  options.inference_config.get('temperature', 0.0),
-            'topP': options.inference_config.get('top_p', 0.9),
+            'topP': options.inference_config.get('top_p'),
             'stopSequences': options.inference_config.get('stop_sequences', [])
         }
         self.tools = [

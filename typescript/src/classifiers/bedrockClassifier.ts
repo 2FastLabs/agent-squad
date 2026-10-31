@@ -1,5 +1,5 @@
 import {
-  BEDROCK_MODEL_ID_CLAUDE_3_5_SONNET,
+  BEDROCK_MODEL_ID_CLAUDE_HAIKU_4_5,
   ConversationMessage,
   ParticipantRole,
 } from "../types";
@@ -101,7 +101,7 @@ export class BedrockClassifier extends Classifier{
     this.region = options.region || process.env.REGION;
     this.client = new BedrockRuntimeClient({region:this.region});
     addUserAgentMiddleware(this.client, "bedrock-classifier");
-    this.modelId = options.modelId || BEDROCK_MODEL_ID_CLAUDE_3_5_SONNET;
+    this.modelId = options.modelId || BEDROCK_MODEL_ID_CLAUDE_HAIKU_4_5;
     // Initialize inferenceConfig only if it's provided in options
     this.inferenceConfig = {
       maxTokens: options.inferenceConfig?.maxTokens,

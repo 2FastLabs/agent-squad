@@ -14,9 +14,9 @@ The Bedrock Classifier is the default classifier used in the Agent Squad. It lev
 
 ### Default Model
 
-The classifier uses Claude 3.5 Sonnet as its default model:
+The classifier uses Claude Haiku 4.5, through the global cross-Region inference profile, as its default model:
 ```typescript
-BEDROCK_MODEL_ID_CLAUDE_3_5_SONNET = "anthropic.claude-3-5-sonnet-20240620-v1:0"
+BEDROCK_MODEL_ID_CLAUDE_HAIKU_4_5 = "global.anthropic.claude-haiku-4-5-20251001-v1:0"
 ```
 
 ### Model Support for Tool Choice
@@ -278,7 +278,7 @@ You can customize the BedrockClassifier by creating an instance with specific op
 
 The BedrockClassifier accepts the following configuration options:
 
-- `model_id` (optional): The ID of the Bedrock model to use. Defaults to Claude 3.5 Sonnet.
+- `model_id` (optional): The ID of the Bedrock model to use. Defaults to Claude Haiku 4.5 (`BEDROCK_MODEL_ID_CLAUDE_HAIKU_4_5`).
 - `region` (optional): The AWS region to use. If not provided, it will use the `REGION` environment variable.
 - `inference_config` (optional): A dictionary containing inference configuration parameters:
   - `maxTokens` (optional): The maximum number of tokens to generate.

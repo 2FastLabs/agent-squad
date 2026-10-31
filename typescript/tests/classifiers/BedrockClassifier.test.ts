@@ -1,7 +1,7 @@
 
 import { BedrockClassifier, BedrockClassifierOptions } from '../../src/classifiers/bedrockClassifier';
 import { BedrockRuntimeClient, ConverseCommand } from "@aws-sdk/client-bedrock-runtime";
-import { ConversationMessage, BEDROCK_MODEL_ID_CLAUDE_3_5_SONNET } from "../../src/types/index";
+import { ConversationMessage, BEDROCK_MODEL_ID_CLAUDE_HAIKU_4_5 } from "../../src/types/index";
 import { MockAgent } from "../mock/mockAgent";
 import { Logger } from "../../src/utils/logger";
 
@@ -25,7 +25,7 @@ describe('BedrockClassifier', () => {
 
     const options: Partial<BedrockClassifierOptions> = {
       region: 'us-west-2',
-      modelId: BEDROCK_MODEL_ID_CLAUDE_3_5_SONNET,
+      modelId: BEDROCK_MODEL_ID_CLAUDE_HAIKU_4_5,
       inferenceConfig: {
         maxTokens: 100,
         temperature: 0.7,
@@ -39,13 +39,13 @@ describe('BedrockClassifier', () => {
   it('should initialize with default values when no options are provided', () => {
     const defaultClassifier = new BedrockClassifier();
     expect(defaultClassifier['region']).toBe(process.env.REGION);
-    expect(defaultClassifier['modelId']).toBe(BEDROCK_MODEL_ID_CLAUDE_3_5_SONNET);
+    expect(defaultClassifier['modelId']).toBe(BEDROCK_MODEL_ID_CLAUDE_HAIKU_4_5);
     expect(defaultClassifier['inferenceConfig']).toEqual({});
   });
 
   it('should initialize with provided options', () => {
     expect(classifier['region']).toBe('us-west-2');
-    expect(classifier['modelId']).toBe(BEDROCK_MODEL_ID_CLAUDE_3_5_SONNET);
+    expect(classifier['modelId']).toBe(BEDROCK_MODEL_ID_CLAUDE_HAIKU_4_5);
     expect(classifier['inferenceConfig']).toEqual({
       maxTokens: 100,
       temperature: 0.7,

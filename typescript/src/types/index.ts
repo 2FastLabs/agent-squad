@@ -1,5 +1,15 @@
+/**
+ * Claude Haiku 4.5 through the global cross-Region inference profile. The bare
+ * model ID isn't supported for on-demand throughput on bedrock-runtime, so the
+ * profile ID is used. Pass a geo profile (e.g. us./eu./jp.) as modelId if
+ * requests must stay in one geography.
+ */
+export const BEDROCK_MODEL_ID_CLAUDE_HAIKU_4_5 = "global.anthropic.claude-haiku-4-5-20251001-v1:0";
+/** @deprecated Claude 3 Haiku reached end of life on Amazon Bedrock. Use BEDROCK_MODEL_ID_CLAUDE_HAIKU_4_5. */
 export const BEDROCK_MODEL_ID_CLAUDE_3_HAIKU = "anthropic.claude-3-haiku-20240307-v1:0";
+/** @deprecated Claude 3 Sonnet reached end of life on Amazon Bedrock. Use BEDROCK_MODEL_ID_CLAUDE_HAIKU_4_5. */
 export const BEDROCK_MODEL_ID_CLAUDE_3_SONNET = "anthropic.claude-3-sonnet-20240229-v1:0";
+/** @deprecated Claude 3.5 Sonnet reached end of life on Amazon Bedrock. Use BEDROCK_MODEL_ID_CLAUDE_HAIKU_4_5. */
 export const BEDROCK_MODEL_ID_CLAUDE_3_5_SONNET = "anthropic.claude-3-5-sonnet-20240620-v1:0";
 export const BEDROCK_MODEL_ID_LLAMA_3_70B = "meta.llama3-70b-instruct-v1:0";
 export const OPENAI_MODEL_ID_GPT_O_MINI = "gpt-4o-mini";
