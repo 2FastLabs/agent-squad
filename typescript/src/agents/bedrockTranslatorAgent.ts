@@ -1,5 +1,5 @@
 import { Agent, AgentOptions } from "./agent";
-import { ConversationMessage, ParticipantRole, BEDROCK_MODEL_ID_CLAUDE_3_HAIKU } from "../types";
+import { ConversationMessage, ParticipantRole, BEDROCK_MODEL_ID_CLAUDE_HAIKU_4_5 } from "../types";
 import { BedrockRuntimeClient, ConverseCommand, ContentBlock } from "@aws-sdk/client-bedrock-runtime";
 import { Logger } from "../utils/logger";
 
@@ -65,7 +65,7 @@ export class BedrockTranslatorAgent extends Agent {
     super(options);
     this.sourceLanguage = options.sourceLanguage;
     this.targetLanguage = options.targetLanguage || 'English';
-    this.modelId = options.modelId || BEDROCK_MODEL_ID_CLAUDE_3_HAIKU;
+    this.modelId = options.modelId || BEDROCK_MODEL_ID_CLAUDE_HAIKU_4_5;
     this.client = new BedrockRuntimeClient({ region: options.region });
     this.inferenceConfig = options.inferenceConfig || {};
   }

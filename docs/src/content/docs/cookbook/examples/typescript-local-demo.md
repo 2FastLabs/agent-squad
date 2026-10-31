@@ -92,8 +92,8 @@ npx ts-node quickstart.ts
 ```
 
 ## Implementation Notes
-- Uses default Bedrock Classifier with `anthropic.claude-3-5-sonnet-20240620-v1:0`
-- Utilizes Bedrock LLM Agent with `anthropic.claude-3-haiku-20240307-v1:0`
+- Uses default Bedrock Classifier with `global.anthropic.claude-haiku-4-5-20251001-v1:0`
+- Utilizes Bedrock LLM Agent with `global.anthropic.claude-haiku-4-5-20251001-v1:0`
 - Implements in-memory storage by default
 
 ## Next Steps

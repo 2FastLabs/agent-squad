@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import Mock, AsyncMock, patch
 from typing import AsyncIterable
-from agent_squad.types import ConversationMessage, ParticipantRole, AgentProviderType
+from agent_squad.types import ConversationMessage, ParticipantRole, AgentProviderType, BEDROCK_MODEL_ID_CLAUDE_HAIKU_4_5
 from agent_squad.agents import (
     BedrockLLMAgent,
     BedrockLLMAgentOptions,
@@ -816,11 +816,12 @@ def test_additional_model_request_fields(mock_boto3_client):
     assert result["additionalModelRequestFields"]["custom_param"] == "custom_value"
     assert result["additionalModelRequestFields"]["metadata"] == {"source": "unit_test"}
     
-    # Test without thinking - topP should be present
+    # Test without thinking - a topP the caller sets should be kept
     options = BedrockLLMAgentOptions(
         name="TestAgent",
         description="A test agent",
         model_id="test-model",
+        inference_config={"topP": 0.9},
         additional_model_request_fields={
             "custom_param": "custom_value"
         }
@@ -831,7 +832,7 @@ def test_additional_model_request_fields(mock_boto3_client):
     
     # Verify topP is present when thinking is not enabled
     assert "topP" in result["inferenceConfig"]
-    assert result["inferenceConfig"]["topP"] == 0.9  # Default value
+    assert result["inferenceConfig"]["topP"] == 0.9
 
 
 def test_empty_tool_config_omits_toolconfig(mock_boto3_client):
@@ -883,4 +884,17 @@ def test_sampling_defaults_are_kept(mock_boto3_client):
     command = agent._build_conversation_command([], "system prompt")
 
     assert command["inferenceConfig"]["temperature"] == 0.0
-    assert command["inferenceConfig"]["topP"] == 0.9
+    # Claude Haiku 4.5 and newer reject temperature and topP together.
+    assert "topP" not in command["inferenceConfig"]
+
+
+def test_default_model_is_claude_haiku_4_5(mock_boto3_client):
+    agent = BedrockLLMAgent(BedrockLLMAgentOptions(
+        name="TestAgent",
+        description="A test agent",
+        region="us-west-2",
+    ))
+
+    assert agent.model_id == BEDROCK_MODEL_ID_CLAUDE_HAIKU_4_5
+    command = agent._build_conversation_command([], "system prompt")
+    assert command["modelId"] == "global.anthropic.claude-haiku-4-5-20251001-v1:0"

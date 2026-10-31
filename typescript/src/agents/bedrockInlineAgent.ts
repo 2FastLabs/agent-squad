@@ -6,8 +6,7 @@ import {
   import { BedrockAgentRuntimeClient, InvokeInlineAgentCommand, AgentActionGroup, KnowledgeBase } from "@aws-sdk/client-bedrock-agent-runtime";
   import { Agent, AgentOptions } from "./agent";
   import {
-    BEDROCK_MODEL_ID_CLAUDE_3_HAIKU,
-    BEDROCK_MODEL_ID_CLAUDE_3_SONNET,
+    BEDROCK_MODEL_ID_CLAUDE_HAIKU_4_5,
     ConversationMessage,
     ParticipantRole,
     TemplateVariables,
@@ -117,16 +116,16 @@ import {
       );
 
       // Set model IDs
-      this.modelId = options.modelId ?? BEDROCK_MODEL_ID_CLAUDE_3_HAIKU;
-      this.foundationModel = options.foundationModel ?? BEDROCK_MODEL_ID_CLAUDE_3_SONNET;
+      this.modelId = options.modelId ?? BEDROCK_MODEL_ID_CLAUDE_HAIKU_4_5;
+      this.foundationModel = options.foundationModel ?? BEDROCK_MODEL_ID_CLAUDE_HAIKU_4_5;
 
       this.enableTrace = options.enableTrace ?? false;
 
-      // Set inference configuration
+      // Set inference configuration. topP isn't set by default: Claude Haiku 4.5
+      // and newer reject temperature and topP in the same request.
       this.inferenceConfig = options.inferenceConfig ?? {
         maxTokens: 1000,
         temperature: 0.0,
-        topP: 0.9,
         stopSequences: []
       };
 

@@ -60,7 +60,7 @@ Follow these steps to deploy the demo chat web application:
    cdk bootstrap aws://123456789012/us-east-1
    ```
    replace `123456789012` with your account id.
-   This chat-demo application is using the default [BedrockClassifier](http://localhost:4321/agent-squad/classifiers/built-in/bedrock-classifier#basic-usage) with Claude 3.5 Sonnet v1. Make sure to use a region where this model is available. If you plan on using a region different from us-east-1 (e.g us-west-2), make sure to also bootstrap us-east-1 region as well as the CDK stack also deploys infra in this region (lambda@edge function).
+   This chat-demo application is using the default [BedrockClassifier](http://localhost:4321/agent-squad/classifiers/built-in/bedrock-classifier#basic-usage) with Claude Haiku 4.5 through the global cross-Region inference profile. Make sure to use a region where this model is available. If you plan on using a region different from us-east-1 (e.g us-west-2), make sure to also bootstrap us-east-1 region as well as the CDK stack also deploys infra in this region (lambda@edge function).
 
 5. **Review and Customize the Stack** (optional):
    Open `chat-demo-app/cdk.json` and review the configuration. You can customize aspects of the deployment by enabling or disabling additional agents.

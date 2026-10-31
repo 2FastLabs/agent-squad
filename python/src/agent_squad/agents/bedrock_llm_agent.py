@@ -7,7 +7,7 @@ from agent_squad.agents import Agent, AgentOptions, AgentStreamResponse
 from agent_squad.types import (
     ConversationMessage,
     ParticipantRole,
-    BEDROCK_MODEL_ID_CLAUDE_3_HAIKU,
+    BEDROCK_MODEL_ID_CLAUDE_HAIKU_4_5,
     TemplateVariables,
     AgentProviderType,
 )
@@ -48,14 +48,15 @@ class BedrockLLMAgent(Agent):
 
         user_agent.register_feature_to_client(self.client, feature="bedrock-llm-agent")
 
-        self.model_id: str = options.model_id or BEDROCK_MODEL_ID_CLAUDE_3_HAIKU
+        self.model_id: str = options.model_id or BEDROCK_MODEL_ID_CLAUDE_HAIKU_4_5
         self.streaming: bool = options.streaming
         self.inference_config: dict[str, Any]
 
+        # topP isn't set by default: Claude Haiku 4.5 and newer reject
+        # temperature and topP in the same request.
         default_inference_config = {
             "maxTokens": 1000,
             "temperature": 0.0,
-            "topP": 0.9,
             "stopSequences": [],
         }
 
@@ -70,8 +71,9 @@ class BedrockLLMAgent(Agent):
         self.additional_model_request_fields: Optional[dict[str, Any]] = options.additional_model_request_fields or {}
         # if thinking is enabled, unset top_p
         if self.additional_model_request_fields.get("thinking", {}).get("type") == "enabled":
-            Logger.warn("Removing topP for thinking mode")
-            del self.inference_config["topP"]
+            if "topP" in self.inference_config:
+                Logger.warn("Removing topP for thinking mode")
+                del self.inference_config["topP"]
 
         self.guardrail_config: Optional[dict[str, str]] = options.guardrail_config or {}
 

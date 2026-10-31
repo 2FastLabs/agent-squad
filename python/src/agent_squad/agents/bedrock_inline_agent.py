@@ -7,8 +7,7 @@ from agent_squad.utils import conversation_to_dict, Logger
 from agent_squad.agents import Agent, AgentOptions
 from agent_squad.types import (ConversationMessage,
                        ParticipantRole,
-                       BEDROCK_MODEL_ID_CLAUDE_3_HAIKU,
-                       BEDROCK_MODEL_ID_CLAUDE_3_SONNET,
+                       BEDROCK_MODEL_ID_CLAUDE_HAIKU_4_5,
                        TemplateVariables)
 import re
 
@@ -73,7 +72,7 @@ class BedrockInlineAgent(Agent):
             else:
                 self.client = boto3.client('bedrock-runtime')
 
-        self.model_id: str = options.model_id or BEDROCK_MODEL_ID_CLAUDE_3_HAIKU
+        self.model_id: str = options.model_id or BEDROCK_MODEL_ID_CLAUDE_HAIKU_4_5
 
         # Initialize bedrock agent client
         if options.bedrock_agent_client:
@@ -88,15 +87,15 @@ class BedrockInlineAgent(Agent):
                 self.bedrock_agent_client = boto3.client('bedrock-agent-runtime')
 
         # Set model ID
-        self.model_id = options.model_id or BEDROCK_MODEL_ID_CLAUDE_3_HAIKU
+        self.model_id = options.model_id or BEDROCK_MODEL_ID_CLAUDE_HAIKU_4_5
 
-        self.foundation_model = options.foundation_model or BEDROCK_MODEL_ID_CLAUDE_3_SONNET
+        self.foundation_model = options.foundation_model or BEDROCK_MODEL_ID_CLAUDE_HAIKU_4_5
 
-        # Set inference configuration
+        # Set inference configuration. topP isn't set by default: Claude Haiku
+        # 4.5 and newer reject temperature and topP in the same request.
         default_inference_config = {
             'maxTokens': 1000,
             'temperature': 0.0,
-            'topP': 0.9,
             'stopSequences': []
         }
         self.inference_config = {**default_inference_config, **(options.inference_config or {})}
