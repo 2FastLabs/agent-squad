@@ -344,6 +344,8 @@ tools (`ToolProvider`), storage (`ChatStorage`), and tracing (`Tracer`) are all 
 optional integrations (MCP, tracing exporters) ship as separate products so the core stays
 dependency-free.
 
+`SummarizingChatStorage` persists raw messages before updating its summary buffer. A failed raw write leaves the buffer unchanged. A summarizer error still propagates after persistence, so a thrown save does not necessarily mean the raw message was not committed.
+
 ## Building with an AI assistant
 
 This repo ships a **skill** — a single, assistant-agnostic guide at [`SKILL.md`](SKILL.md) with the

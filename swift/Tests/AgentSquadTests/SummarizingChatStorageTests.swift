@@ -27,10 +27,14 @@ import Testing
         func set(_ v: T) { value = v }
     }
 
+    private enum SaveFailure: Error { case unavailable }
+
     // MARK: - SpyStorage
 
     private actor SpyStorage: ChatStorage {
         var storedMessages: [ConversationMessage] = []
+        private var rejectWrites = false
+        func rejectFutureWrites() { rejectWrites = true }
         private(set) var fetchCallCount = 0
         private(set) var saveMessagesBatches: [[ConversationMessage]] = []
 
@@ -44,10 +48,12 @@ import Testing
         }
 
         func save(_ message: ConversationMessage, userId: String, sessionId: String, agentId: String, maxMessages: Int?) async throws {
+            if rejectWrites { throw SaveFailure.unavailable }
             storedMessages.append(message)
         }
 
         func saveMessages(_ messages: [ConversationMessage], userId: String, sessionId: String, agentId: String, maxMessages: Int?) async throws {
+            if rejectWrites { throw SaveFailure.unavailable }
             saveMessagesBatches.append(messages)
             storedMessages.append(contentsOf: messages)
         }
@@ -273,5 +279,51 @@ import Testing
         await #expect(throws: SummarizationFailed.self) {
             try await storage.fetch(userId: "u", sessionId: "s", agentId: "a", maxMessages: nil)
         }
+    }
+    @Test(arguments: [false, true])
+    func rawWriteSurvivesSummarizerFailure(batch: Bool) async throws {
+        let inner = SpyStorage(messages: makeHistory(2))
+        let calls = Counter()
+        let storage = SummarizingChatStorage(wrapping: inner, summarizer: { history, _ in
+            await calls.increment()
+            if await calls.value == 1 { return Array(history.suffix(2)) }
+            throw SaveFailure.unavailable
+        }, triggerAt: 1, keepLast: 1)
+        _ = try await storage.fetch(userId: "u", sessionId: "s", agentId: "a", maxMessages: nil)
+
+        await #expect(throws: SaveFailure.self) {
+            if batch {
+                try await storage.saveMessages([user("persist before summary")], userId: "u", sessionId: "s", agentId: "a", maxMessages: nil)
+            } else {
+                try await storage.save(user("persist before summary"), userId: "u", sessionId: "s", agentId: "a", maxMessages: nil)
+            }
+        }
+        let raw = try await storage.fetchAllChats(userId: "u", sessionId: "s")
+        #expect(raw.count == 5)
+        #expect(texts(raw).last == "persist before summary")
+    }
+
+    @Test(arguments: [false, true])
+    func failedRawWriteDoesNotChangeSummaryBuffer(batch: Bool) async throws {
+        let inner = SpyStorage(messages: makeHistory(2))
+        let calls = Counter()
+        let storage = SummarizingChatStorage(wrapping: inner, summarizer: { history, _ in
+            await calls.increment()
+            return Array(history.suffix(2))
+        }, triggerAt: 1, keepLast: 1)
+        let before = try await storage.fetch(userId: "u", sessionId: "s", agentId: "a", maxMessages: nil)
+        await inner.rejectFutureWrites()
+
+        await #expect(throws: SaveFailure.self) {
+            if batch {
+                try await storage.saveMessages([user("unsaved")], userId: "u", sessionId: "s", agentId: "a", maxMessages: nil)
+            } else {
+                try await storage.save(user("unsaved"), userId: "u", sessionId: "s", agentId: "a", maxMessages: nil)
+            }
+        }
+        let after = try await storage.fetch(userId: "u", sessionId: "s", agentId: "a", maxMessages: nil)
+        #expect(texts(after) == texts(before))
+        #expect(await calls.value == 1)
+        #expect(try await storage.fetchAllChats(userId: "u", sessionId: "s").count == 4)
     }
 }

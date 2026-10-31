@@ -3,6 +3,9 @@ SummarizingChatStorage — a ChatStorage wrapper that keeps conversation history
 compact by summarizing old messages whenever the in-memory buffer grows past a
 threshold.
 
+Raw writes complete before summary updates. A summarizer error still propagates
+after persistence; it does not roll back the raw write.
+
 Raw messages are always written to the inner storage unchanged — they remain
 available for analytics, audit, or replay via ``fetch_all_chats``. The
 summarizer only affects what the agent sees through ``fetch_chat``.
@@ -114,13 +117,14 @@ class SummarizingChatStorage(ChatStorage):
         new_message: Union[ConversationMessage, TimestampedMessage],
         max_history_size: Optional[int] = None,
     ) -> bool:
+        result = await self._storage.save_chat_message(
+            user_id, session_id, agent_id, new_message, max_history_size
+        )
         key = self._key(user_id, session_id, agent_id)
         if key in self._buffers:
             self._buffers[key].append(self._to_conversation_message(new_message))
             await self._compress_if_needed(key)
-        return await self._storage.save_chat_message(
-            user_id, session_id, agent_id, new_message, max_history_size
-        )
+        return result
 
     async def save_chat_messages(
         self,
@@ -130,14 +134,15 @@ class SummarizingChatStorage(ChatStorage):
         new_messages: Union[list[ConversationMessage], list[TimestampedMessage]],
         max_history_size: Optional[int] = None,
     ) -> bool:
+        result = await self._storage.save_chat_messages(
+            user_id, session_id, agent_id, new_messages, max_history_size
+        )
         key = self._key(user_id, session_id, agent_id)
         if key in self._buffers:
             for msg in new_messages:
                 self._buffers[key].append(self._to_conversation_message(msg))
             await self._compress_if_needed(key)
-        return await self._storage.save_chat_messages(
-            user_id, session_id, agent_id, new_messages, max_history_size
-        )
+        return result
 
     async def fetch_chat(
         self,

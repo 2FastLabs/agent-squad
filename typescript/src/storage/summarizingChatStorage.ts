@@ -16,6 +16,9 @@ export type ChatSummarizer = (
 /**
  * A `ChatStorage` wrapper that keeps agent context small via summarization.
  *
+ * Raw writes complete before summary updates. Summarizer errors still propagate
+ * after persistence and do not roll back the raw write.
+ *
  * Raw messages are always written to the inner storage untouched — they remain
  * available for analytics, audit, or replay via `fetchAllChats`. The summarizer
  * only affects what the agent sees through `fetchChat`.
@@ -84,13 +87,14 @@ export class SummarizingChatStorage extends ChatStorage {
     newMessage: ConversationMessage,
     maxHistorySize?: number
   ): Promise<ConversationMessage[]> {
+    const result = await this.storage.saveChatMessage(userId, sessionId, agentId, newMessage, maxHistorySize);
     const key = this.key(userId, sessionId, agentId);
     const buf = this.buffers.get(key);
     if (buf !== undefined) {
       buf.push(newMessage);
       await this.compressIfNeeded(key);
     }
-    return this.storage.saveChatMessage(userId, sessionId, agentId, newMessage, maxHistorySize);
+    return result;
   }
 
   async fetchChat(

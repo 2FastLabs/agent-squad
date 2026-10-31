@@ -234,3 +234,70 @@ async def test_summarizer_error_propagates_from_save():
     with pytest.raises(RuntimeError, match="summarizer failed on save"):
         for i in range(11):
             await storage.save_chat_message("u", "s", "a", user_msg(f"m{i}"))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("batch", [False, True])
+async def test_raw_write_survives_summarizer_failure(batch):
+    inner = InMemoryChatStorage()
+    await seed(inner, make_history(2))
+    calls = 0
+
+    async def summarizer(history, keep_last):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return history[-2:]
+        raise RuntimeError("summary unavailable")
+
+    storage = SummarizingChatStorage(inner, summarizer, trigger_at=1, keep_last=1)
+    await storage.fetch_chat("u", "s", "a")
+    new_message = user_msg("persist before summary")
+    with pytest.raises(RuntimeError, match="summary unavailable"):
+        if batch:
+            await storage.save_chat_messages("u", "s", "a", [new_message])
+        else:
+            await storage.save_chat_message("u", "s", "a", new_message)
+
+    raw = await storage.fetch_all_chats("u", "s")
+    assert len(raw) == 5
+    assert raw[-1].content[0]["text"] == "persist before summary"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("batch", [False, True])
+async def test_failed_raw_write_does_not_change_summary_buffer(batch):
+    class FailingStorage(InMemoryChatStorage):
+        fail = False
+
+        async def save_chat_message(self, *args, **kwargs):
+            if self.fail:
+                raise OSError("storage unavailable")
+            return await super().save_chat_message(*args, **kwargs)
+
+        async def save_chat_messages(self, *args, **kwargs):
+            if self.fail:
+                raise OSError("storage unavailable")
+            return await super().save_chat_messages(*args, **kwargs)
+
+    inner = FailingStorage()
+    await seed(inner, make_history(2))
+    calls = 0
+
+    async def summarizer(history, keep_last):
+        nonlocal calls
+        calls += 1
+        return history[-2:]
+
+    storage = SummarizingChatStorage(inner, summarizer, trigger_at=1, keep_last=1)
+    before = list(await storage.fetch_chat("u", "s", "a"))
+    inner.fail = True
+    with pytest.raises(OSError, match="storage unavailable"):
+        if batch:
+            await storage.save_chat_messages("u", "s", "a", [user_msg("unsaved")])
+        else:
+            await storage.save_chat_message("u", "s", "a", user_msg("unsaved"))
+
+    assert calls == 1
+    assert await storage.fetch_chat("u", "s", "a") == before
+    assert len(await storage.fetch_all_chats("u", "s")) == 4
