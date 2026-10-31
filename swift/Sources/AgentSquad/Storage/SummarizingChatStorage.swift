@@ -50,6 +50,9 @@ private actor BufferStore {
 ///
 /// - `fetchAllChats` is never intercepted: raw full history is always available.
 ///
+/// Raw writes finish before summary updates. A summarizer error still propagates
+/// after persistence and does not roll back the raw write.
+///
 /// ```swift
 /// let storage = SummarizingChatStorage(
 ///     wrapping: InMemoryChatStorage(),
@@ -125,16 +128,16 @@ public struct SummarizingChatStorage: ChatStorage {
         agentId: String,
         maxMessages: Int?
     ) async throws {
-        let key = bufferKey(userId: userId, sessionId: sessionId, agentId: agentId)
-        if await bufferStore.get(key: key) != nil {
-            await bufferStore.append(key: key, message: message)
-            try await compressIfNeeded(key: key)
-        }
         try await base.save(
             message,
             userId: userId, sessionId: sessionId, agentId: agentId,
             maxMessages: maxMessages
         )
+        let key = bufferKey(userId: userId, sessionId: sessionId, agentId: agentId)
+        if await bufferStore.get(key: key) != nil {
+            await bufferStore.append(key: key, message: message)
+            try await compressIfNeeded(key: key)
+        }
     }
 
     public func saveMessages(
@@ -144,6 +147,11 @@ public struct SummarizingChatStorage: ChatStorage {
         agentId: String,
         maxMessages: Int?
     ) async throws {
+        try await base.saveMessages(
+            messages,
+            userId: userId, sessionId: sessionId, agentId: agentId,
+            maxMessages: maxMessages
+        )
         let key = bufferKey(userId: userId, sessionId: sessionId, agentId: agentId)
         if await bufferStore.get(key: key) != nil {
             for message in messages {
@@ -151,11 +159,6 @@ public struct SummarizingChatStorage: ChatStorage {
             }
             try await compressIfNeeded(key: key)
         }
-        try await base.saveMessages(
-            messages,
-            userId: userId, sessionId: sessionId, agentId: agentId,
-            maxMessages: maxMessages
-        )
     }
 
     public func fetchAllChats(

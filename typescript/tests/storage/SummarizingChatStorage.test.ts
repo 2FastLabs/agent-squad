@@ -182,3 +182,39 @@ describe("SummarizingChatStorage", () => {
     await expect(storage.fetchChat("u", "s", "a")).rejects.toThrow("summarizer failed");
   });
 });
+
+describe("summary persistence failure ordering", () => {
+  test("persists raw messages before a save-time summarizer failure", async () => {
+    const inner = new InMemoryChatStorage();
+    await seed(inner, makeHistory(2));
+    let calls = 0;
+    const storage = new SummarizingChatStorage(inner, async history => {
+      if (++calls === 1) return history.slice(-2);
+      throw new Error("summary unavailable");
+    }, 1, 1);
+    await storage.fetchChat("u", "s", "a");
+
+    await expect(storage.saveChatMessage("u", "s", "a", user("persist before summary")))
+      .rejects.toThrow("summary unavailable");
+
+    const raw = await storage.fetchAllChats("u", "s");
+    expect(raw).toHaveLength(5);
+    expect(text(raw[4])).toBe("persist before summary");
+  });
+
+  test("does not update the summary buffer when raw persistence fails", async () => {
+    const inner = new InMemoryChatStorage();
+    await seed(inner, makeHistory(2));
+    const summarizer = jest.fn(async (history: ConversationMessage[]) => history.slice(-2));
+    const storage = new SummarizingChatStorage(inner, summarizer, 1, 1);
+    const before = [...await storage.fetchChat("u", "s", "a")];
+    jest.spyOn(inner, "saveChatMessage").mockRejectedValueOnce(new Error("storage unavailable"));
+
+    await expect(storage.saveChatMessage("u", "s", "a", user("unsaved")))
+      .rejects.toThrow("storage unavailable");
+
+    expect(summarizer).toHaveBeenCalledTimes(1);
+    expect(await storage.fetchChat("u", "s", "a")).toEqual(before);
+    expect(await storage.fetchAllChats("u", "s")).toHaveLength(4);
+  });
+});
