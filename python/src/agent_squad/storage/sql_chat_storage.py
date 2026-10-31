@@ -7,7 +7,11 @@ from agent_squad.types import ConversationMessage, ParticipantRole, TimestampedM
 from agent_squad.utils import Logger
 
 class SqlChatStorage(ChatStorage):
-    """SQL-based chat storage implementation supporting both local SQLite and remote Turso databases."""
+    """SQL chat storage supporting local SQLite and remote Turso databases.
+
+    Existing TimestampedMessage inputs keep their timestamps; ordinary messages
+    receive generated timestamps. Merged history uses the persisted timestamps.
+    """
 
     def __init__(
         self,
@@ -77,7 +81,8 @@ class SqlChatStorage(ChatStorage):
             if isinstance(new_message, ConversationMessage):
                 new_message = TimestampedMessage(
                     role=new_message.role,
-                    content=new_message.content
+                    content=new_message.content,
+                    timestamp=new_message.timestamp if isinstance(new_message, TimestampedMessage) else 0
                 )
 
             # Get next message index
@@ -158,7 +163,7 @@ class SqlChatStorage(ChatStorage):
                     timestamped_messages.append(TimestampedMessage(
                         role=message.role,
                         content=message.content,
-                        timestamp=base_timestamp + i
+                        timestamp=message.timestamp if isinstance(message, TimestampedMessage) else base_timestamp + i
                     ))
                 else:
                     timestamped_messages.append(message)

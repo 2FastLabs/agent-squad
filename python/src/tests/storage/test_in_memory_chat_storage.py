@@ -163,3 +163,40 @@ async def test_save_chat_messages_timestamp(storage):
     assert result[0].content == "Hello"
     assert result[1].role == "assistant"
     assert result[1].content == "Hello from assistant"
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("batch", [False, True])
+async def test_supplied_timestamps_preserve_cross_agent_order(storage, batch):
+    for text, timestamp in [("newer", 2000), ("older", 1000)]:
+        message = TimestampedMessage(role="user", content=[{"text": text}], timestamp=timestamp)
+        if batch:
+            await storage.save_chat_messages("u", "s", text, [message])
+        else:
+            await storage.save_chat_message("u", "s", text, message)
+        message.timestamp = -1  # Saving snapshots the supplied timestamp value.
+
+    stored_timestamps = [m.timestamp for history in storage.conversations.values() for m in history]
+    assert sorted(stored_timestamps) == [1000, 2000]
+    history = await storage.fetch_all_chats("u", "s")
+    assert [m.content[0]["text"] for m in history] == ["older", "newer"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("plain_first", [False, True])
+async def test_batch_preserves_each_supplied_timestamp(storage, plain_first):
+    messages = [
+        TimestampedMessage(role="user", content=[{"text": "newer"}], timestamp=2000),
+        TimestampedMessage(role="user", content=[{"text": "older"}], timestamp=1000),
+    ]
+    generated = ConversationMessage(role="user", content=[{"text": "generated"}])
+    messages.insert(0 if plain_first else len(messages), generated)
+    await storage.save_chat_messages("u", "s", "a", messages)
+
+    stored = next(iter(storage.conversations.values()))
+    for original, persisted in zip(messages, stored, strict=True):
+        if isinstance(original, TimestampedMessage):
+            assert persisted.timestamp == original.timestamp
+        else:
+            assert persisted.timestamp > 2000
+    history = await storage.fetch_all_chats("u", "s")
+    assert [m.content[0]["text"] for m in history] == ["older", "newer", "generated"]

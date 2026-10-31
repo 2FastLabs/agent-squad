@@ -220,6 +220,10 @@ routing prompt via `set_system_prompt(template, variables)` where `{{AGENT_DESCR
 | `SqlChatStorage` | `sql` | libSQL/Turso-backed |
 | `SummarizingChatStorage` | none | Wraps any storage; compresses history via a user-supplied async callable when history exceeds `trigger_at` pairs |
 
+`InMemoryChatStorage` and `SqlChatStorage` preserve supplied `TimestampedMessage`
+timestamps in single and batch saves, so merged history retains event order.
+Ordinary `ConversationMessage` inputs still receive generated timestamps.
+
 All storage classes extend `ChatStorage` (`agent_squad.storage.chat_storage`). Storage is keyed by
 `(user_id, session_id, agent_id)`. `MAX_MESSAGE_PAIRS_PER_AGENT` (default 100) trims history at
 write time. `save_chat=False` on an agent disables history for that agent only.
