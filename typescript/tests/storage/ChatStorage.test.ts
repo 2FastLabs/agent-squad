@@ -453,5 +453,26 @@ describe("InMemoryChatStorage", () => {
 
   });
 
+  test("fetchChat with maxHistorySize 0 or 1 should keep no messages", async () => {
+    const userId = "user1";
+    const sessionId = "session1";
+    const agentId = "agent1";
+
+    await storage.saveChatMessage(userId, sessionId, agentId, createMessage(ParticipantRole.USER, "Hello"));
+    await storage.saveChatMessage(userId, sessionId, agentId, createMessage(ParticipantRole.ASSISTANT, "Hi there"));
+    await storage.saveChatMessage(userId, sessionId, agentId, createMessage(ParticipantRole.USER, "Another question"));
+    await storage.saveChatMessage(userId, sessionId, agentId, createMessage(ParticipantRole.ASSISTANT, "Another answer"));
+
+    // slice(-0) is slice(0), so without an explicit guard these return the full history.
+    expect(await storage.fetchChat(userId, sessionId, agentId, 0)).toHaveLength(0);
+    expect(await storage.fetchChat(userId, sessionId, agentId, 1)).toHaveLength(0);
+
+    // Sizes >= 2 keep the existing even-pair behaviour, and undefined keeps everything.
+    const trimmed = await storage.fetchChat(userId, sessionId, agentId, 2);
+    expect(trimmed).toHaveLength(2);
+    expect(trimmed[1].content?.[0]?.text).toBe("Another answer");
+    expect(await storage.fetchChat(userId, sessionId, agentId)).toHaveLength(4);
+  });
+
 
 });

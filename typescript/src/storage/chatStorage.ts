@@ -13,7 +13,11 @@ export abstract class ChatStorage {
     
     // Ensure maxHistorySize is even to maintain complete binoms
     const adjustedMaxHistorySize = maxHistorySize % 2 === 0 ? maxHistorySize : maxHistorySize - 1;
-    
+
+    // A size of 0 (or 1, rounded down to 0) means keep no messages.
+    // conversation.slice(-0) is conversation.slice(0), which keeps everything.
+    if (adjustedMaxHistorySize <= 0) return [];
+
     return conversation.slice(-adjustedMaxHistorySize);
   }
 
