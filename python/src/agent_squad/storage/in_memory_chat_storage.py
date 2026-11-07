@@ -54,6 +54,12 @@ class InMemoryChatStorage(ChatStorage):
         #                message detected for agent {agent_id}. Not saving.")
         #     return self._remove_timestamps(conversation)
 
+        # An empty batch is a no-op. Guard before indexing into new_messages so
+        # this matches SqlChatStorage.save_chat_messages, which returns the
+        # current conversation when there is nothing to add.
+        if not new_messages:
+            return self._remove_timestamps(conversation)
+
         if isinstance(new_messages[0], ConversationMessage):  # Check only first message
             new_messages = [TimestampedMessage(
                     role=new_message.role,
