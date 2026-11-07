@@ -69,6 +69,26 @@ def test_trim_conversation(chat_storage):
     trimmed = chat_storage.trim_conversation(conversation, max_history_size=None)
     assert trimmed == conversation
 
+
+def test_trim_conversation_zero_and_one_keep_nothing(chat_storage):
+    """A size of 0 (or 1 rounded down to 0) must not keep the whole history."""
+    conversation = [
+        ConversationMessage(role="user", content="Message 1"),
+        ConversationMessage(role="assistant", content="Response 1"),
+        ConversationMessage(role="user", content="Message 2"),
+        ConversationMessage(role="assistant", content="Response 2"),
+    ]
+
+    # conversation[-0:] is conversation[:], so without an explicit guard
+    # these return the full conversation instead of an empty list.
+    assert chat_storage.trim_conversation(conversation, max_history_size=0) == []
+    assert chat_storage.trim_conversation(conversation, max_history_size=1) == []
+
+    # Sizes >= 2 keep the existing even-pair behaviour.
+    trimmed = chat_storage.trim_conversation(conversation, max_history_size=2)
+    assert len(trimmed) == 2
+    assert trimmed[-1].content == "Response 2"
+
 @pytest.mark.asyncio
 async def test_save_chat_message(chat_storage):
     result = await chat_storage.save_chat_message(

@@ -42,6 +42,10 @@ class ChatStorage(ABC):
             adjusted_max_history_size = max_history_size
         else:
             adjusted_max_history_size = max_history_size - 1
+        # A size of 0 (or 1, rounded down to 0) means keep no messages.
+        # conversation[-0:] is conversation[:], which would keep everything.
+        if adjusted_max_history_size <= 0:
+            return []
         return conversation[-adjusted_max_history_size:]
 
     @abstractmethod
