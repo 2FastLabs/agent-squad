@@ -163,3 +163,30 @@ async def test_save_chat_messages_timestamp(storage):
     assert result[0].content == "Hello"
     assert result[1].role == "assistant"
     assert result[1].content == "Hello from assistant"
+
+
+@pytest.mark.asyncio
+async def test_save_chat_messages_empty_batch_is_noop(storage):
+    """An empty batch must not raise or modify the conversation (parity with SqlChatStorage)."""
+    user_id = "user1"
+    session_id = "session1"
+    agent_id = "agent1"
+
+    # Empty batch on a brand-new conversation.
+    result = await storage.save_chat_messages(user_id, session_id, agent_id, [])
+    assert result == []
+
+    # Empty batch on a conversation that already has messages: no-op, history preserved.
+    messages = [ConversationMessage(role="user", content="Hello")]
+    await storage.save_chat_messages(user_id, session_id, agent_id, messages)
+    result = await storage.save_chat_messages(user_id, session_id, agent_id, [])
+    assert len(result) == 1
+    assert result[0].content == "Hello"
+
+    # A non-empty batch after an empty one still works.
+    result = await storage.save_chat_messages(
+        user_id, session_id, agent_id,
+        [ConversationMessage(role="assistant", content="Hi there")],
+    )
+    assert len(result) == 2
+    assert result[1].content == "Hi there"
