@@ -1,3 +1,5 @@
+import asyncio
+import time
 import pytest
 from unittest.mock import Mock, AsyncMock, patch
 from typing import AsyncIterable
@@ -171,3 +173,71 @@ def test_is_streaming_enabled(openai_agent):
     openai_agent.streaming = True
     assert openai_agent.is_streaming_enabled()
 
+
+
+async def _count_ticks_while(coro, tick_seconds=0.02):
+    """Run coro and, at the same time, a ticker. Returns (result, ticks).
+    If coro blocks the event loop, the ticker can't run and ticks stays near 0."""
+    ticks = 0
+    done = asyncio.Event()
+
+    async def ticker():
+        nonlocal ticks
+        while not done.is_set():
+            await asyncio.sleep(tick_seconds)
+            ticks += 1
+
+    ticker_task = asyncio.create_task(ticker())
+    try:
+        result = await coro
+    finally:
+        done.set()
+        await ticker_task
+    return result, ticks
+
+
+@pytest.mark.asyncio
+async def test_single_response_does_not_block_event_loop(openai_agent, mock_openai_client):
+    mock_response = Mock()
+    mock_response.choices = [Mock()]
+    mock_response.choices[0].message.content = "slow answer"
+
+    def slow_create(**kwargs):
+        time.sleep(0.3)  # a slow network call on the sync client
+        return mock_response
+
+    mock_openai_client.chat.completions.create.side_effect = slow_create
+
+    result, ticks = await _count_ticks_while(
+        openai_agent.process_request("Test question", "test_user", "test_session", [])
+    )
+
+    assert result.content[0]['text'] == "slow answer"
+    assert ticks >= 5  # the event loop kept running during the call
+
+
+@pytest.mark.asyncio
+async def test_streaming_response_does_not_block_event_loop(openai_agent, mock_openai_client):
+    openai_agent.streaming = True
+
+    def chunk(content):
+        c = Mock()
+        c.choices = [Mock()]
+        c.choices[0].delta.content = content
+        return c
+
+    def slow_stream():
+        for content in ["slow ", "stream"]:
+            time.sleep(0.15)  # each chunk waits on the network
+            yield chunk(content)
+
+    mock_openai_client.chat.completions.create.return_value = slow_stream()
+
+    async def read_all():
+        stream = await openai_agent.process_request("Test question", "test_user", "test_session", [])
+        return [c.text async for c in stream if c.text]
+
+    texts, ticks = await _count_ticks_while(read_all())
+
+    assert texts == ["slow ", "stream"]
+    assert ticks >= 5  # the event loop kept running between chunks

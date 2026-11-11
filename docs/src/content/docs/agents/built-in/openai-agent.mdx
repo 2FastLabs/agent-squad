@@ -25,7 +25,7 @@ The `OpenAIAgentOptions` extends the base `AgentOptions` with the following fiel
 - `description`: Description of the agent's capabilities
 - Authentication (one of the following is required):
   - `apiKey`: Your OpenAI API key
-  - `client`: Custom OpenAI client instance
+  - `client`: Custom OpenAI client instance. In Python, pass the sync `OpenAI` client: the agent runs its calls in a worker thread, so a slow or streaming response doesn't block the event loop for other requests.
 
 ### Optional Fields
 - `model`: OpenAI model identifier (e.g., 'gpt-4', 'gpt-3.5-turbo'). Defaults to `OPENAI_MODEL_ID_GPT_O_MINI`

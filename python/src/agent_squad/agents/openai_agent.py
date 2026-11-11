@@ -1,3 +1,4 @@
+import asyncio
 from typing import AsyncIterable, Optional, Any, AsyncGenerator
 from dataclasses import dataclass
 from openai import OpenAI
@@ -14,6 +15,8 @@ from agent_squad.types import (
 )
 from agent_squad.utils import Logger
 from agent_squad.retrievers import Retriever
+
+_END_OF_STREAM = object()
 
 
 
@@ -144,7 +147,8 @@ class OpenAIAgent(Agent):
     async def handle_single_response(self, request_options: dict[str, Any]) -> ConversationMessage:
         try:
             request_options['stream'] = False
-            chat_completion = self.client.chat.completions.create(**request_options)
+            # The OpenAI client is sync: run the call in a thread so it doesn't block the event loop.
+            chat_completion = await asyncio.to_thread(self.client.chat.completions.create, **request_options)
 
             if not chat_completion.choices:
                 raise ValueError('No choices returned from OpenAI API')
@@ -166,10 +170,13 @@ class OpenAIAgent(Agent):
     async def handle_streaming_response(self, request_options: dict[str, Any]) -> AsyncGenerator[AgentStreamResponse, None]:
         """Yield text and the final message, skipping chunks without completion choices."""
         try:
-            stream = self.client.chat.completions.create(**request_options)
+            # The OpenAI client is sync: open the stream and read each chunk in a thread,
+            # so other requests keep running while this one waits on the network.
+            stream = await asyncio.to_thread(self.client.chat.completions.create, **request_options)
+            chunks = iter(stream)
             accumulated_message = []
 
-            for chunk in stream:
+            while (chunk := await asyncio.to_thread(next, chunks, _END_OF_STREAM)) is not _END_OF_STREAM:
                 if not chunk.choices:
                     continue
                 if chunk.choices[0].delta.content:
