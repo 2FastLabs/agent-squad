@@ -1,3 +1,4 @@
+import asyncio
 import pytest
 from unittest.mock import Mock, patch, AsyncMock
 from agent_squad.classifiers.anthropic_classifier import AnthropicClassifier, AnthropicClassifierOptions, ANTHROPIC_MODEL_ID_CLAUDE_3_5_SONNET
@@ -139,8 +140,46 @@ class TestAnthropicClassifier:
 
         assert classifier.inference_config['max_tokens'] == 1000  # default
         assert classifier.inference_config['temperature'] == 0.3  # custom
-        assert classifier.inference_config['top_p'] is None  # default: not sent
+        assert classifier.inference_config['top_p'] == 0.9  # default
         assert classifier.inference_config['stop_sequences'] == []  # default
+
+    @staticmethod
+    def _sent_kwargs(mock_anthropic, inference_config):
+        mock_tool_use = Mock()
+        mock_tool_use.type = "tool_use"
+        mock_tool_use.input = {"selected_agent": "agent-1", "confidence": 0.9}
+        mock_response = Mock()
+        mock_response.content = [mock_tool_use]
+        mock_response.usage.input_tokens = 1
+        mock_response.usage.output_tokens = 1
+        mock_client = Mock()
+        mock_client.messages.create.return_value = mock_response
+        mock_anthropic.return_value = mock_client
+
+        classifier = AnthropicClassifier(
+            AnthropicClassifierOptions(api_key="test-api-key", inference_config=inference_config)
+        )
+        classifier.set_agents({'agent-1': Mock(id='agent-1', name='A', description='d')})
+        asyncio.run(classifier.process_request("Test input", []))
+        return mock_client.messages.create.call_args[1]
+
+    @patch('agent_squad.classifiers.anthropic_classifier.Anthropic')
+    def test_none_inference_values_are_left_out(self, mock_anthropic):
+        kwargs = self._sent_kwargs(mock_anthropic, {'temperature': None, 'top_p': None})
+        assert 'temperature' not in kwargs
+        assert 'top_p' not in kwargs
+
+    @patch('agent_squad.classifiers.anthropic_classifier.Anthropic')
+    def test_only_temperature_set(self, mock_anthropic):
+        kwargs = self._sent_kwargs(mock_anthropic, {'temperature': 0.3, 'top_p': None})
+        assert kwargs['temperature'] == 0.3
+        assert 'top_p' not in kwargs
+
+    @patch('agent_squad.classifiers.anthropic_classifier.Anthropic')
+    def test_only_top_p_set(self, mock_anthropic):
+        kwargs = self._sent_kwargs(mock_anthropic, {'temperature': None, 'top_p': 0.8})
+        assert 'temperature' not in kwargs
+        assert kwargs['top_p'] == 0.8
 
     @patch('agent_squad.classifiers.anthropic_classifier.Anthropic')
     def test_tools_configuration(self, mock_anthropic):
@@ -207,9 +246,8 @@ class TestAnthropicClassifier:
 
         assert call_kwargs['model'] == ANTHROPIC_MODEL_ID_CLAUDE_3_5_SONNET
         assert call_kwargs['max_tokens'] == 1000
-        # temperature and top_p are not sent unless the caller sets them
-        assert 'temperature' not in call_kwargs
-        assert 'top_p' not in call_kwargs
+        assert call_kwargs['temperature'] == 0.0
+        assert call_kwargs['top_p'] == 0.9
         assert call_kwargs['messages'] == [{"role": "user", "content": "Test input"}]
         assert call_kwargs['system'] == "You are an AI assistant."
         assert call_kwargs['tools'] == classifier.tools

@@ -65,9 +65,7 @@ class AnthropicAgent(Agent):
 
         self.model_id = options.model_id
 
-        # temperature and topP are not sent unless set: newer Claude models reject
-        # both together, and the latest ones reject any non-default value.
-        default_inference_config = {"maxTokens": 1000, "temperature": None, "topP": None, "stopSequences": []}
+        default_inference_config = {"maxTokens": 1000, "temperature": 0.1, "topP": 0.9, "stopSequences": []}
 
         if options.inference_config:
             self.inference_config = {**default_inference_config, **options.inference_config}
@@ -169,6 +167,8 @@ class AnthropicAgent(Agent):
             "stop_sequences": self.inference_config.get("stopSequences"),
         }
 
+        # Set "temperature" or "topP" to None to leave it out of the request. Newer Claude
+        # models (Opus 4.7 and later, Claude 5) reject these parameters.
         if self.inference_config.get("temperature") is not None:
             json_input["temperature"] = self.inference_config["temperature"]
         if self.inference_config.get("topP") is not None:

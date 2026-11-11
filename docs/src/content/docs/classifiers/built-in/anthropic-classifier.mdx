@@ -272,9 +272,13 @@ The AnthropicClassifier accepts the following configuration options:
 - `model_id` (optional): The ID of the Anthropic model to use. Defaults to Claude 3.5 Sonnet.
 - `inference_config` (optional): A dictionary containing inference configuration parameters:
   - `max_tokens` (optional): The maximum number of tokens to generate. Defaults to 1000.
-  - `temperature` (optional): Controls randomness in output generation.
-  - `top_p` (optional): Controls diversity of output generation.
+  - `temperature` (optional): Controls randomness in output generation. Defaults to 0.0. Set it to `None` to leave it out of the request.
+  - `top_p` (optional): Controls diversity of output generation. Defaults to 0.9. Set it to `None` to leave it out of the request.
   - `stop_sequences` (optional): A list of sequences that will stop generation.
+
+:::note
+Newer Claude models (Claude Opus 4.7 and later, and the Claude 5 models) reject `temperature` and `top_p`. When you use one of them, pass `inference_config={'temperature': None, 'top_p': None}` so neither value is sent. Passing `None` for a value is the same as not sending it.
+:::
 
 ## Best Practices
 

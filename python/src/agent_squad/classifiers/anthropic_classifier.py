@@ -35,10 +35,10 @@ class AnthropicClassifier(Classifier):
         default_max_tokens = 1000
         self.inference_config = {
             'max_tokens': options.inference_config.get('max_tokens', default_max_tokens),
-            # Not sent unless set: newer Claude models reject temperature and top_p together,
-            # and the latest ones reject any non-default value.
-            'temperature': options.inference_config.get('temperature'),
-            'top_p': options.inference_config.get('top_p'),
+            # Pass None to leave temperature or top_p out of the request: newer Claude
+            # models (Opus 4.7 and later, Claude 5) reject them.
+            'temperature': options.inference_config.get('temperature', 0.0),
+            'top_p': options.inference_config.get('top_p', 0.9),
             'stop_sequences': options.inference_config.get('stop_sequences', []),
         }
 
@@ -90,9 +90,9 @@ class AnthropicClassifier(Classifier):
             await self.callbacks.on_classifier_start('on_classifier_start', input_text, **kwargs)
 
             sampling = {
-                name: self.inference_config[key]
-                for name, key in (('temperature', 'temperature'), ('top_p', 'top_p'))
-                if self.inference_config[key] is not None
+                name: self.inference_config[name]
+                for name in ('temperature', 'top_p')
+                if self.inference_config[name] is not None
             }
             response:Message = self.client.messages.create(
                 model=self.model_id,
