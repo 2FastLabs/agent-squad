@@ -159,6 +159,33 @@ agent = AnthropicAgent(AnthropicAgentOptions(
 
 <hr/>
 
+`temperature` defaults to 0.1 and `topP` to 0.9. Newer Claude models (Claude Opus 4.7 and later, and the Claude 5 models) reject these parameters, so for one of them set both to `null` (TypeScript) or `None` (Python) and they are left out of the request:
+
+<Tabs syncKey="runtime">
+  <TabItem label="TypeScript" icon="seti:typescript" color="blue">
+```typescript
+const agent = new AnthropicAgent({
+  name: 'Anthropic Assistant',
+  description: 'An assistant on a model that does not accept sampling parameters',
+  apiKey: 'your-anthropic-api-key',
+  modelId: 'claude-opus-5-5',
+  inferenceConfig: { temperature: null, topP: null }
+});
+```
+  </TabItem>
+  <TabItem label="Python" icon="seti:python">
+```python
+agent = AnthropicAgent(AnthropicAgentOptions(
+    name='Anthropic Assistant',
+    description='An assistant on a model that does not accept sampling parameters',
+    api_key='your-anthropic-api-key',
+    model_id='claude-opus-5-5',
+    inference_config={'temperature': None, 'topP': None}
+))
+```
+  </TabItem>
+</Tabs>
+
 **5. With Simple System Prompt**
 
 <Tabs syncKey="runtime">

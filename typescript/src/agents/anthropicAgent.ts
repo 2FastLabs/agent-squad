@@ -26,11 +26,13 @@ export interface AnthropicAgentOptions extends AgentOptions {
 
     // Controls randomness in output generation
     // Higher values (e.g., 0.8) make output more random, lower values (e.g., 0.2) make it more deterministic
-    temperature?: number;
+    // Defaults to 0.1. Set to null to leave it out of the request (newer Claude models reject it)
+    temperature?: number | null;
 
     // Controls diversity of output via nucleus sampling
     // 1.0 considers all tokens, lower values (e.g., 0.9) consider only the most probable tokens
-    topP?: number;
+    // Defaults to 0.9. Set to null to leave it out of the request
+    topP?: number | null;
 
     // Array of sequences that will stop the model from generating further tokens when encountered
     stopSequences?: string[];
@@ -69,8 +71,8 @@ export class AnthropicAgent extends Agent {
   protected customSystemPrompt?: string;
   protected inferenceConfig: {
     maxTokens: number;
-    temperature: number;
-    topP: number;
+    temperature?: number;
+    topP?: number;
     stopSequences: string[];
   };
 
@@ -119,8 +121,15 @@ export class AnthropicAgent extends Agent {
     const defaultMaxTokens = 1000; // You can adjust this default value as needed
     this.inferenceConfig = {
       maxTokens: options.inferenceConfig?.maxTokens ?? defaultMaxTokens,
-      temperature: options.inferenceConfig?.temperature ?? 0.1,
-      topP: options.inferenceConfig?.topP ?? 0.9,
+      // null leaves the value out of the request; undefined keeps the default
+      temperature:
+        options.inferenceConfig?.temperature === null
+          ? undefined
+          : (options.inferenceConfig?.temperature ?? 0.1),
+      topP:
+        options.inferenceConfig?.topP === null
+          ? undefined
+          : (options.inferenceConfig?.topP ?? 0.9),
       stopSequences: options.inferenceConfig?.stopSequences ?? [],
     };
 

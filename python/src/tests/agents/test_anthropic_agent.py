@@ -339,6 +339,55 @@ async def test_prepare_tool_config():
     with pytest.raises(RuntimeError, match="Invalid tool config"):
         anthropic_agent._prepare_tool_config()
 
+def _build_input_with(inference_config=None, **kwargs):
+    options = AnthropicAgentOptions(
+        api_key='test-api-key',
+        name="TestAgent",
+        description="A test agent",
+        inference_config=inference_config,
+        **kwargs,
+    )
+    return AnthropicAgent(options)._build_input([{"role": "user", "content": "hi"}], "sys")
+
+
+def test_build_input_none_inference_values_are_left_out():
+    """Claude Opus 4.7+ and the Claude 5 models reject temperature and top_p."""
+    input_data = _build_input_with(
+        {"temperature": None, "topP": None}, model_id="claude-opus-5-5"
+    )
+
+    assert "temperature" not in input_data
+    assert "top_p" not in input_data
+
+
+def test_build_input_only_temperature_set():
+    input_data = _build_input_with({"temperature": 0.3, "topP": None})
+
+    assert input_data["temperature"] == 0.3
+    assert "top_p" not in input_data
+
+
+def test_build_input_only_top_p_set():
+    input_data = _build_input_with({"temperature": None, "topP": 0.8})
+
+    assert "temperature" not in input_data
+    assert input_data["top_p"] == 0.8
+
+
+def test_build_input_zero_temperature_is_sent():
+    input_data = _build_input_with({"temperature": 0.0, "topP": None})
+
+    assert input_data["temperature"] == 0.0
+    assert "top_p" not in input_data
+
+
+def test_build_input_defaults_are_unchanged():
+    input_data = _build_input_with()
+
+    assert input_data["temperature"] == 0.1
+    assert input_data["top_p"] == 0.9
+
+
 def test_build_input():
     options = AnthropicAgentOptions(
         api_key='test-api-key',

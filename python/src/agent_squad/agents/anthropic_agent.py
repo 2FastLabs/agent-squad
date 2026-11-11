@@ -164,10 +164,15 @@ class AnthropicAgent(Agent):
             "max_tokens": self.inference_config.get("maxTokens"),
             "messages": messages,
             "system": system_prompt,
-            "temperature": self.inference_config.get("temperature"),
-            "top_p": self.inference_config.get("topP"),
             "stop_sequences": self.inference_config.get("stopSequences"),
         }
+
+        # Set "temperature" or "topP" to None to leave it out of the request. Newer Claude
+        # models (Opus 4.7 and later, Claude 5) reject these parameters.
+        if self.inference_config.get("temperature") is not None:
+            json_input["temperature"] = self.inference_config["temperature"]
+        if self.inference_config.get("topP") is not None:
+            json_input["top_p"] = self.inference_config["topP"]
 
         # Add any additional model request fields
         if self.additional_model_request_fields:
