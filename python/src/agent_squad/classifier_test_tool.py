@@ -186,14 +186,16 @@ async def run(config_path: Path) -> list[ClassifierTestResult]:
     classifier = _build_classifier(raw.get("classifier", {}))
 
     # Register stub agents so the classifier can route between them.
+    # Classifier keys its registry by agent id: that id is what the prompt
+    # advertises to the model, and what get_agent_by_id resolves the answer against.
     agents: dict[str, Agent] = {}
     for a in raw.get("agents", []):
         stub = _StubAgent(AgentOptions(name=a["name"], description=a["description"]))
-        agents[a["name"]] = stub
-        classifier.set_agents({a["name"]: stub})
+        agents[stub.id] = stub
+    classifier.set_agents(agents)
 
     print(f"Classifier : {type(classifier).__name__}")
-    print(f"Agents     : {', '.join(agents)}")
+    print(f"Agents     : {', '.join(agent.name for agent in agents.values())}")
     print(f"Test cases : {len(raw.get('tests', []))}")
     print("=" * 50)
 
