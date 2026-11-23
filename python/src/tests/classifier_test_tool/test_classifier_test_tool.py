@@ -4,7 +4,7 @@ import pytest
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 from agent_squad.classifier_test_tool import run, ClassifierTestResult
-from agent_squad.classifiers import ClassifierResult
+from agent_squad.classifiers import Classifier, ClassifierResult
 
 
 # ---------------------------------------------------------------------------
@@ -198,3 +198,51 @@ async def test_empty_tests_list(tmp_path):
         results = await run(config_path)
 
     assert results == []
+
+
+@pytest.mark.asyncio
+async def test_every_configured_agent_is_registered_on_the_classifier(tmp_path):
+    """A perfect classifier must score 100%: every agent has to be routable.
+
+    Regression test for run() calling set_agents() once per agent inside the
+    registration loop, which left only the last agent registered. The stub
+    answers from the agents the classifier actually advertised to it, so it
+    can only route to agents that were registered.
+    """
+    cfg = {**BASE_CFG, "tests": [
+        {"input": "book a flight", "expected": "flight_agent"},
+        {"input": "will it rain?", "expected": "weather_agent"},
+    ]}
+    config_path = _write_config(tmp_path, cfg)
+
+    class _PerfectClassifier(Classifier):
+        """Picks the advertised agent whose description matches the input."""
+
+        seen_agents: list[str] = []
+
+        async def process_request(self, input_text, chat_history):
+            advertised = dict(
+                line.split(":", 1)
+                for line in self.agent_descriptions.split("\n\n")
+                if line
+            )
+            self.seen_agents = list(advertised)
+            wanted = "flight" if "flight" in input_text else "weather"
+            agent_id = next(
+                (aid for aid, desc in advertised.items() if wanted in desc.lower()),
+                None,
+            )
+            return ClassifierResult(
+                selected_agent=self.get_agent_by_id(agent_id),
+                confidence=0.95,
+            )
+
+    with patch("agent_squad.classifier_test_tool._build_classifier") as mock_build:
+        classifier = _PerfectClassifier()
+        mock_build.return_value = classifier
+
+        results = await run(config_path)
+
+    assert len(classifier.seen_agents) == 2, classifier.seen_agents
+    assert [r.routed_to for r in results] == ["flight_agent", "weather_agent"]
+    assert all(r.passed for r in results), [(r.index, r.routed_to) for r in results]
