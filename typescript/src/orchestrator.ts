@@ -513,9 +513,20 @@ export class AgentSquad {
     let chunkCount = 0;
     const iterator = agentResponse[Symbol.asyncIterator]();
     let cancelled = false;
+    let iteratorClose: Promise<void> | undefined;
+    const closeIterator = (): Promise<void> => {
+      if (!iteratorClose) {
+        iteratorClose = (async () => {
+          await iterator.return?.();
+        })().catch((error) => {
+          this.logger.warn("Error closing provider stream:", error);
+        });
+      }
+      return iteratorClose;
+    };
     const cancelUpstream = (): void => {
       cancelled = true;
-      void iterator.return?.();
+      void closeIterator();
     };
     accumulatorTransform.once("close", cancelUpstream);
     accumulatorTransform.once("error", cancelUpstream);
@@ -598,9 +609,7 @@ export class AgentSquad {
     } finally {
       accumulatorTransform.off("close", cancelUpstream);
       accumulatorTransform.off("error", cancelUpstream);
-      if (!cancelled) {
-        await iterator.return?.();
-      }
+      await closeIterator();
     }
   }
 
