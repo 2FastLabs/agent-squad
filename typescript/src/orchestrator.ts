@@ -511,19 +511,58 @@ export class AgentSquad {
   ): Promise<void> {
     const streamStartTime = Date.now();
     let chunkCount = 0;
+    const iterator = agentResponse[Symbol.asyncIterator]();
+    let cancelled = false;
+    const cancelUpstream = (): void => {
+      cancelled = true;
+      void iterator.return?.();
+    };
+    accumulatorTransform.once("close", cancelUpstream);
+    accumulatorTransform.once("error", cancelUpstream);
 
     try {
-      for await (const chunk of agentResponse) {
+      while (!cancelled) {
+        const next = await iterator.next();
+        if (next.done || cancelled) {
+          break;
+        }
+        const chunk = next.value;
         if (chunkCount === 0) {
           const firstChunkTime = Date.now();
           const timeToFirstChunk = firstChunkTime - streamStartTime;
           this.executionTimes.set("Time to first chunk", timeToFirstChunk);
           this.logger.printExecutionTimes(this.executionTimes);
         }
-        accumulatorTransform.write(chunk);
+        const writable = accumulatorTransform.write(chunk);
+        if (!writable) {
+          const canContinue = await new Promise<boolean>((resolve) => {
+            const cleanup = (): void => {
+              accumulatorTransform.off("drain", onDrain);
+              accumulatorTransform.off("close", onClose);
+              accumulatorTransform.off("error", onClose);
+            };
+            const onDrain = (): void => {
+              cleanup();
+              resolve(true);
+            };
+            const onClose = (): void => {
+              cleanup();
+              resolve(false);
+            };
+            accumulatorTransform.once("drain", onDrain);
+            accumulatorTransform.once("close", onClose);
+            accumulatorTransform.once("error", onClose);
+          });
+          if (!canContinue) {
+            break;
+          }
+        }
         chunkCount++;
       }
 
+      if (cancelled) {
+        return;
+      }
       accumulatorTransform.end();
       this.logger.debug(`\nStreaming completed: ${chunkCount} chunks received`);
 
@@ -544,6 +583,9 @@ export class AgentSquad {
         this.logger.warn("No data accumulated, messages not saved");
       }
     } catch (error) {
+      if (cancelled) {
+        return;
+      }
       this.logger.error("Error processing stream:", error);
       accumulatorTransform.end();
       if (error instanceof Error) {
@@ -552,6 +594,12 @@ export class AgentSquad {
         accumulatorTransform.destroy(new Error(error));
       } else {
         accumulatorTransform.destroy(new Error("An unknown error occurred"));
+      }
+    } finally {
+      accumulatorTransform.off("close", cancelUpstream);
+      accumulatorTransform.off("error", cancelUpstream);
+      if (!cancelled) {
+        await iterator.return?.();
       }
     }
   }
