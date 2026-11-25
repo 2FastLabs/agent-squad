@@ -57,7 +57,7 @@ search_web_tool = AgentTool(name='search_web',
 
 # Define the agents
 script_writer_agent = BedrockLLMAgent(BedrockLLMAgentOptions(
-    model_id='us.anthropic.claude-3-sonnet-20240229-v1:0',
+    model_id='us.anthropic.claude-haiku-4-5-20251001-v1:0',
     name="ScriptWriterAgent",
     description="""\
 You are an expert screenplay writer. Given a movie idea and genre,
@@ -71,7 +71,7 @@ Your tasks consist of:
 ))
 
 casting_director_agent = BedrockLLMAgent(BedrockLLMAgentOptions(
-    model_id='anthropic.claude-3-haiku-20240307-v1:0',
+    model_id='global.anthropic.claude-haiku-4-5-20251001-v1:0',
     name="CastingDirectorAgent",
     description="""\
 You are a talented casting director. Given a script outline and character descriptions,\
@@ -92,7 +92,7 @@ Your tasks consist of:
 ))
 
 movie_producer_supervisor = BedrockLLMAgent(BedrockLLMAgentOptions(
-    model_id='us.anthropic.claude-3-5-sonnet-20241022-v2:0',
+    model_id='us.anthropic.claude-haiku-4-5-20251001-v1:0',
     name='MovieProducerAgent',
     description="""\
 Experienced movie producer overseeing script and casting.

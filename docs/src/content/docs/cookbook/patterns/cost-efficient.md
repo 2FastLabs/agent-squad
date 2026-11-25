@@ -39,7 +39,7 @@ const basicAgent = new BedrockLLMAgent({
 // Configure expert agent for complex tasks
 const expertAgent = new BedrockLLMAgent({
   name: "Expert Agent",
-  modelId: "anthropic.claude-3-sonnet-20240229-v1:0",
+  modelId: "global.anthropic.claude-haiku-4-5-20251001-v1:0",
   description: "Handles complex analysis and specialized tasks",
   streaming: true,
   inferenceConfig: { temperature: 0.0 }

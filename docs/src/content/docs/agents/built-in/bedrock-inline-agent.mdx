@@ -22,6 +22,8 @@ This architecture removes practical limits on the number of action groups and kn
 
 ## Creating a BedrockInlineAgent
 
+Both the selection model (`modelId` / `model_id`) and the inline agent's foundation model (`foundationModel` / `foundation_model`) default to Haiku 4.5 through `global.anthropic.claude-haiku-4-5-20251001-v1:0`. The global profile routes worldwide and requires inference profile permissions. Set both options to a supported geographic profile when needed, and check its destinations with `GetInferenceProfile`. See [model availability](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-haiku-4-5.html) and [permissions](https://docs.aws.amazon.com/bedrock/latest/userguide/global-cross-region-inference.html). GovCloud requires an explicit supported geographic profile. Set either `temperature` or `topP` in `inferenceConfig`, since Haiku 4.5 rejects both together.
+
 ### Python Package
 
 If you haven't already installed the AWS-related dependencies, make sure to install them:
@@ -67,8 +69,7 @@ import { Tabs, TabItem } from '@astrojs/starlight/components';
       LOG_AGENT_DEBUG_TRACE: true,
       inferenceConfig: {
         maxTokens: 500,
-        temperature: 0.5,
-        topP: 0.9
+        temperature: 0.5
       }
     });
     ```
@@ -105,8 +106,7 @@ import { Tabs, TabItem } from '@astrojs/starlight/components';
         LOG_AGENT_DEBUG_TRACE=True,
         inference_config={
             'maxTokens': 500,
-            'temperature': 0.5,
-            'topP': 0.9
+            'temperature': 0.5
         }
     ))
     ```

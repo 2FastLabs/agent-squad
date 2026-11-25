@@ -52,7 +52,7 @@ The system employs multiple specialized AI agents, each designed for specific ta
 
 #### 1. Order Management Agent
 - **Implementation**: `BedrockLLMAgent`
-- **Model**: Anthropic Claude 3 Sonnet (`anthropic.claude-3-sonnet-20240229-v1:0`)
+- **Model**: Haiku 4.5 (`global.anthropic.claude-haiku-4-5-20251001-v1:0`)
 - **Purpose**: Handles all order-related inquiries and management tasks
 - **Tools**:
   - `orderlookup`:
@@ -71,7 +71,7 @@ The system employs multiple specialized AI agents, each designed for specific ta
 
 #### 2. Product Information Agent
 - **Implementation**: `BedrockLLMAgent`
-- **Model**: Anthropic Claude 3 Haiku (`anthropic.claude-3-haiku-20240307-v1:0`)
+- **Model**: Haiku 4.5 (`global.anthropic.claude-haiku-4-5-20251001-v1:0`)
 - **Purpose**: Provides comprehensive product information and specifications
 - **Integration**:
   - Connected to `AmazonKnowledgeBasesRetriever` for product data

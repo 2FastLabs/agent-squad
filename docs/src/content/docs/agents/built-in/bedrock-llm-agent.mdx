@@ -21,7 +21,9 @@ This agent can handle a wide range of processing tasks, making it suitable for d
 
 ## Creating a BedrockLLMAgent
 
-By default, the **Bedrock LLM Agent** uses Claude Haiku 4.5 through the global cross-Region inference profile (`global.anthropic.claude-haiku-4-5-20251001-v1:0`). To keep requests in one geography, pass a geo inference profile such as `us.anthropic.claude-haiku-4-5-20251001-v1:0` as the model ID.
+By default, the **Bedrock LLM Agent** uses Claude Haiku 4.5 through the global cross-Region inference profile (`global.anthropic.claude-haiku-4-5-20251001-v1:0`). The global profile can route requests worldwide and is available only in supported commercial regions. For regional requirements, pass a supported geographic inference profile as the model ID and verify its destinations with `GetInferenceProfile` from each source region. GovCloud requires a supported geographic profile rather than the global default. See the [model's availability](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-haiku-4-5.html) and [inference profile permissions](https://docs.aws.amazon.com/bedrock/latest/userguide/global-cross-region-inference.html).
+
+Existing model constants and explicit model IDs keep their values. Replace retired IDs in your own configuration; they are not remapped automatically. With the default model, set either `temperature` or `topP`, not both. A Python `topP` override omits the default temperature, and `None` omits a parameter. Thinking requests omit both sampling parameters; set `maxTokens` above the thinking budget.
 
 ### Python Package
 
@@ -93,7 +95,7 @@ client=custom_client
 const agent = new BedrockLLMAgent({
   name: 'Bedrock Assistant',
   description: 'A streaming-enabled assistant',
-  modelId: 'anthropic.claude-3-sonnet-20240229-v1:0',
+  modelId: 'global.anthropic.claude-haiku-4-5-20251001-v1:0',
   streaming: true
 });
 ```
@@ -103,7 +105,7 @@ const agent = new BedrockLLMAgent({
 agent = BedrockLLMAgent(BedrockLLMAgentOptions(
     name='Bedrock Assistant',
     description='A streaming-enabled assistant',
-    model_id='anthropic.claude-3-sonnet-20240229-v1:0',
+    model_id='global.anthropic.claude-haiku-4-5-20251001-v1:0',
     streaming=True
 ))
 ```
@@ -123,7 +125,6 @@ const agent = new BedrockLLMAgent({
   inferenceConfig: {
     maxTokens: 500,
     temperature: 0.7,
-    topP: 0.9,
     stopSequences: ['Human:', 'AI:']
   }
 });
@@ -137,7 +138,6 @@ agent = BedrockLLMAgent(BedrockLLMAgentOptions(
     inference_config={
         'maxTokens': 500,
         'temperature': 0.7,
-        'topP': 0.9,
         'stopSequences': ['Human:', 'AI:']
     }
 ))
@@ -308,7 +308,7 @@ agent = BedrockLLMAgent(BedrockLLMAgentOptions(
   ```typescript
   const agent = new BedrockLLMAgent({
     name: "Tech Agent",
-    modelId: "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+    modelId: "us.anthropic.claude-haiku-4-5-20251001-v1:0",
     description:"Specializes in technology areas including software development, hardware, AI, cybersecurity, \
     blockchain, cloud computing, emerging tech innovations, and pricing/costs related to technology products and services.",
     inferenceConfig: {
@@ -331,7 +331,7 @@ agent = BedrockLLMAgent(BedrockLLMAgentOptions(
         description="Specializes in technology areas including software development, hardware, AI, \
         cybersecurity, blockchain, cloud computing, emerging tech innovations, and pricing/costs \
         related to technology products and services.",
-        model_id="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+        model_id="us.anthropic.claude-haiku-4-5-20251001-v1:0",
         callbacks=LLMAgentCallbacks(),
         inference_config={"maxTokens": 2500, "temperature": 1},
         additional_model_request_fields={"thinking": {"type": "enabled", "budget_tokens": 2000}},
@@ -353,14 +353,13 @@ const agent = new BedrockLLMAgent({
   name: "Advanced Bedrock Assistant",
   description: "A fully configured AI assistant powered by Bedrock models",
   // Optional fields
-  modelId: "anthropic.claude-3-sonnet-20240229-v1:0",
+  modelId: "global.anthropic.claude-haiku-4-5-20251001-v1:0",
   region: "us-west-2",
   streaming: true,
   retriever: customRetriever, // Custom retriever for additional context
   inferenceConfig: {
     maxTokens: 500,
     temperature: 0.7,
-    topP: 0.9,
     stopSequences: ["Human:", "AI:"],
   },
   guardrailConfig: {
@@ -420,7 +419,7 @@ agent = BedrockLLMAgent(BedrockLLMAgentOptions(
     description='A fully configured AI assistant powered by Bedrock models',
 
     # Optional fields
-    model_id='anthropic.claude-3-sonnet-20240229-v1:0',
+    model_id='global.anthropic.claude-haiku-4-5-20251001-v1:0',
     region='us-west-2',
     streaming=True,
     retriever=custom_retriever,  # Custom retriever for additional context
@@ -428,7 +427,6 @@ agent = BedrockLLMAgent(BedrockLLMAgentOptions(
     inference_config={
         'maxTokens': 500,
         'temperature': 0.7,
-        'topP': 0.9,
         'stopSequences': ['Human:', 'AI:']
     },
 
@@ -652,7 +650,7 @@ Choose the approach that best fits your needs:
 |------------|-------------|-------------------|
 | `name` | Identifies the agent within the system | **Required** |
 | `description` | Describes the agent's purpose and capabilities | **Required** |
-| `modelId` | Specifies the LLM model to use (e.g., Claude 3 Sonnet) | Optional |
+| `modelId` | Specifies the model or inference profile to use | Optional |
 | `region` | AWS region for the Bedrock service | Optional |
 | `streaming` | Enables streaming responses for real-time output | Optional |
 | `inferenceConfig` | Fine-tunes the model's output characteristics | Optional |
@@ -669,7 +667,7 @@ Choose the approach that best fits your needs:
 |--------|-------------|-------------------|
 | `name` | Identifies the agent within the system | **Required** |
 | `description` | Describes the agent's purpose and capabilities | **Required** |
-| `model_id` | Specifies the LLM model to use (e.g., Claude 3 Sonnet) | Optional |
+| `model_id` | Specifies the model or inference profile to use | Optional |
 | `region` | AWS region for the Bedrock service | Optional |
 | `streaming` | Enables streaming responses for real-time output | Optional |
 | `inference_config` | Fine-tunes the model's output characteristics | Optional |

@@ -5,7 +5,7 @@ from typing import List, Dict, Any, AsyncIterable, Optional, Union
 from dataclasses import dataclass
 from enum import Enum
 from agent_squad.agents import Agent, AgentOptions
-from agent_squad.types import ConversationMessage, ParticipantRole
+from agent_squad.types import ConversationMessage, ParticipantRole, BEDROCK_MODEL_ID_CLAUDE_HAIKU_4_5
 from agent_squad.utils import conversation_to_dict, Logger
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
@@ -16,9 +16,11 @@ from prompts import PRODUCT_SEARCH_PROMPT
 @dataclass
 class ProductSearchAgentOptions(AgentOptions):
     max_tokens: int = 1000
-    temperature: float = 0.0
-    top_p: float = 0.9
+    temperature: Optional[float] = 0.0
+    top_p: Optional[float] = None
     client: Optional[Any] = None
+    model_id: Optional[str] = None
+    region: Optional[str] = None
 
 class ProductSearchAgent(Agent):
     def __init__(self, options: ProductSearchAgentOptions):
@@ -26,7 +28,7 @@ class ProductSearchAgent(Agent):
         self.id = self.generate_key_from_name(options.name)
         self.description = options.description
         self.save_chat = options.save_chat
-        self.model_id = options.model_id
+        self.model_id = options.model_id or BEDROCK_MODEL_ID_CLAUDE_HAIKU_4_5
         self.region = options.region
         self.max_tokens = options.max_tokens
         self.temperature = options.temperature
@@ -75,10 +77,12 @@ class ProductSearchAgent(Agent):
                 "messages": conversation_to_dict(conversation),
                 "system": [{"text": self.system_prompt}],
                 "inferenceConfig": {
-                    "maxTokens": self.max_tokens,
-                    "temperature": self.temperature,
-                    "topP": self.top_p,
-                    "stopSequences": []
+                    key: value for key, value in {
+                        "maxTokens": self.max_tokens,
+                        "temperature": self.temperature,
+                        "topP": self.top_p,
+                        "stopSequences": []
+                    }.items() if value is not None
                 },
             }
 

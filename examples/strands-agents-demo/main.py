@@ -94,7 +94,7 @@ if __name__ == "__main__":
         name="Health Agent",
         streaming=False,
         description="Specializes in health and well being.",
-        model_id="anthropic.claude-3-sonnet-20240229-v1:0",
+        model_id="global.anthropic.claude-haiku-4-5-20251001-v1:0",
     ))
     orchestrator.add_agent(health_agent)
 

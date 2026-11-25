@@ -13,7 +13,7 @@ def create_tech_agent():
         name="Tech Agent",
         streaming=True,
         description="Specializes in technology areas including software development, hardware, AI, cybersecurity, blockchain, cloud computing, emerging tech innovations, and pricing/costs related to technology products and services.",
-        model_id="anthropic.claude-3-sonnet-20240229-v1:0",
+        model_id="global.anthropic.claude-haiku-4-5-20251001-v1:0",
         callbacks=ChainlitAgentCallbacks()
     ))
 
@@ -22,7 +22,7 @@ def create_travel_agent():
         name="Travel Agent",
         streaming=True,
         description="Experienced Travel Agent sought to create unforgettable journeys for clients. Responsibilities include crafting personalized itineraries, booking flights, accommodations, and activities, and providing expert travel advice. Must have excellent communication skills, destination knowledge, and ability to manage multiple bookings. Proficiency in travel booking systems and a passion for customer service required",
-        model_id="anthropic.claude-3-sonnet-20240229-v1:0",
+        model_id="global.anthropic.claude-haiku-4-5-20251001-v1:0",
         callbacks=ChainlitAgentCallbacks()
     ))
 

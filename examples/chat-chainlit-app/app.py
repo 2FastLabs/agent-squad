@@ -9,11 +9,10 @@ from agent_squad.agents import AgentResponse
 
 # Initialize the orchestrator
 custom_bedrock_classifier = BedrockClassifier(BedrockClassifierOptions(
-    model_id='anthropic.claude-3-haiku-20240307-v1:0',
+    model_id='global.anthropic.claude-haiku-4-5-20251001-v1:0',
     inference_config={
         'maxTokens': 500,
-        'temperature': 0.7,
-        'topP': 0.9
+        'temperature': 0.7
     }
 ))
 

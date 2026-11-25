@@ -79,7 +79,7 @@ A demonstration of how AI agents and human support can work together in an e-com
 
 The system employs three specialized agents:
 
-#### 1. Order Management Agent (Claude 3 Sonnet)
+#### 1. Order Management Agent (Haiku 4.5)
 - 🎯 **Purpose**: Handles order-related inquiries
 - 🛠️ **Tools**:
   - `orderlookup`: Retrieves order details
@@ -90,7 +90,7 @@ The system employs three specialized agents:
   - Return processing
   - Refund handling
 
-#### 2. Product Information Agent (Claude 3 Haiku)
+#### 2. Product Information Agent (Haiku 4.5)
 - 🎯 **Purpose**: Product information and specifications
 - 🧠 **Knowledge Base**: Integrated product database
 - ✨ **Capabilities**:

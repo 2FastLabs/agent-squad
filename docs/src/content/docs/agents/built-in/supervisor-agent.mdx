@@ -480,20 +480,20 @@ Here's a complete example showing how to use the SupervisorAgent in a typical sc
       const supervisor = new BedrockLLMAgent({
         name: "Team Lead",
         description: "Coordinates specialized team members",
-        modelId: "anthropic.claude-3-sonnet-20240229-v1:0"
+        modelId: "global.anthropic.claude-haiku-4-5-20251001-v1:0"
       });
 
       // Create team members
       const techAgent = new BedrockLLMAgent({
         name: "Tech Support",
         description: "Handles technical issues",
-        modelId: "anthropic.claude-3-sonnet-20240229-v1:0"
+        modelId: "global.anthropic.claude-haiku-4-5-20251001-v1:0"
       });
 
       const billingAgent = new BedrockLLMAgent({
         name: "Billing Expert",
         description: "Handles billing and payment queries",
-        modelId: "anthropic.claude-3-sonnet-20240229-v1:0"
+        modelId: "global.anthropic.claude-haiku-4-5-20251001-v1:0"
       });
 
       // Create custom tools

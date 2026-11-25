@@ -75,7 +75,7 @@ python main.py
 
 The system will start an interactive session where you can input queries. The orchestrator will:
 
-1. Classify your query using Claude 3 Haiku
+1. Classify your query using Haiku 4.5
 2. Route it to the appropriate specialized agent (Tech, Health, or Weather)
 3. Return the response from the specialized agent
 4. Log the entire interaction flow to Langfuse

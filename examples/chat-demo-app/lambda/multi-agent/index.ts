@@ -63,7 +63,7 @@ const orchestrator = new AgentSquad({
   },
   logger: logger,
   classifier: new BedrockClassifier({
-    modelId: "anthropic.claude-3-sonnet-20240229-v1:0",
+    modelId: "global.anthropic.claude-haiku-4-5-20251001-v1:0",
   }),
 });
 

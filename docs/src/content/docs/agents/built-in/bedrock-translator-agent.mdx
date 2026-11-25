@@ -5,6 +5,8 @@ description: Documentation for the Bedrock Translator Agent in the Agent Squad S
 
 The `BedrockTranslatorAgent` uses Amazon Bedrock's language models to translate text between different languages.
 
+The default model is Haiku 4.5 through `global.anthropic.claude-haiku-4-5-20251001-v1:0`. This profile routes worldwide and requires [inference profile permissions](https://docs.aws.amazon.com/bedrock/latest/userguide/global-cross-region-inference.html). You can supply a supported geographic profile as `modelId` / `model_id`; check its destinations with `GetInferenceProfile`. See [model availability](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-haiku-4-5.html). For this model, configure either `temperature` or `topP` in the inference settings.
+
 ## Key Features
 
 - Utilizes Amazon Bedrock's language models
@@ -61,19 +63,18 @@ For more complex use cases, you can create a BedrockTranslatorAgent with custom 
 <Tabs syncKey="runtime">
   <TabItem label="TypeScript" icon="seti:typescript" color="blue">
     ```typescript
-    import { BedrockTranslatorAgent, BedrockTranslatorAgentOptions, BEDROCK_MODEL_ID_CLAUDE_3_SONNET } from 'agent-squad';
+    import { BedrockTranslatorAgent, BedrockTranslatorAgentOptions, BEDROCK_MODEL_ID_CLAUDE_HAIKU_4_5 } from 'agent-squad';
 
     const options: BedrockTranslatorAgentOptions = {
       name: 'AdvancedTranslator',
       description: 'Advanced translator with custom settings',
       sourceLanguage: 'French',
       targetLanguage: 'German',
-      modelId: BEDROCK_MODEL_ID_CLAUDE_3_SONNET,
+      modelId: BEDROCK_MODEL_ID_CLAUDE_HAIKU_4_5,
       region: 'us-west-2',
       inferenceConfig: {
         maxTokens: 2000,
         temperature: 0.1,
-        topP: 0.95,
         stopSequences: ['###']
       }
     };
@@ -84,19 +85,18 @@ For more complex use cases, you can create a BedrockTranslatorAgent with custom 
   <TabItem label="Python" icon="seti:python">
     ```python
     from agent_squad.agents import BedrockTranslatorAgent, BedrockTranslatorAgentOptions
-    from agent_squad.types import BEDROCK_MODEL_ID_CLAUDE_3_SONNET
+    from agent_squad.types import BEDROCK_MODEL_ID_CLAUDE_HAIKU_4_5
 
     options = BedrockTranslatorAgentOptions(
         name='AdvancedTranslator',
         description='Advanced translator with custom settings',
         source_language='French',
         target_language='German',
-        model_id=BEDROCK_MODEL_ID_CLAUDE_3_SONNET,
+        model_id=BEDROCK_MODEL_ID_CLAUDE_HAIKU_4_5,
         region='us-west-2',
         inference_config={
             'maxTokens': 2000,
             'temperature': 0.1,
-            'topP': 0.95,
             'stopSequences': ['###']
         }
     )
