@@ -40,7 +40,7 @@ class MyCustomHandler(AgentCallbacks):
 def setup_orchestrator(streamer_queue):
 
     classifier = BedrockClassifier(BedrockClassifierOptions(
-         model_id='anthropic.claude-3-sonnet-20240229-v1:0',
+         model_id='global.anthropic.claude-haiku-4-5-20251001-v1:0',
     ))
 
 
@@ -73,7 +73,7 @@ This will help you understand the kinds of questions and topics our system can a
     product_search_agent = ProductSearchAgent(ProductSearchAgentOptions(
         name="Product Search Agent",
         description="Specializes in e-commerce product searches and listings. Handles queries about finding specific products, product rankings, specifications, price comparisons within an online shopping context. Use this agent for shopping-related queries and product discovery in a retail environment.",
-        model_id="anthropic.claude-3-sonnet-20240229-v1:0",
+        model_id="global.anthropic.claude-haiku-4-5-20251001-v1:0",
         save_chat=True,
     ))
 
@@ -82,7 +82,7 @@ This will help you understand the kinds of questions and topics our system can a
         name="Returns and Terms Assistant",
         streaming=True,
         description="Specializes in explaining return policies, refund processes, and terms & conditions. Provides clear guidance on customer rights, warranty claims, and special cases while maintaining up-to-date knowledge of consumer protection regulations and e-commerce best practices.",
-        model_id="anthropic.claude-3-sonnet-20240229-v1:0",
+        model_id="global.anthropic.claude-haiku-4-5-20251001-v1:0",
         #TODO SET a retriever to fetch data from a knowledge base
         callbacks=my_handler
     ))
@@ -98,7 +98,7 @@ This will help you understand the kinds of questions and topics our system can a
         name="Greeting agent",
         streaming=True,
         description="Says hello and lists the available agents",
-        model_id="anthropic.claude-3-sonnet-20240229-v1:0",
+        model_id="global.anthropic.claude-haiku-4-5-20251001-v1:0",
         save_chat=False,
         callbacks=my_handler
     ))

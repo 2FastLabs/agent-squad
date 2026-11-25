@@ -169,7 +169,7 @@ from agent_squad.utils import AgentTools, AgentTool
 agent = BedrockLLMAgent(BedrockLLMAgentOptions(
     name="My Agent",
     description="Handles X",              # shown to the classifier
-    model_id="anthropic.claude-3-5-sonnet-20240620-v1:0",
+    model_id="global.anthropic.claude-haiku-4-5-20251001-v1:0",
     streaming=True,
     save_chat=True,                        # default True — persists history
     tool_config={"tool": my_tools},        # AgentTools instance

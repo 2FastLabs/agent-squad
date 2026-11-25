@@ -77,14 +77,14 @@ tech_agent = BedrockLLMAgent(
     options=BedrockLLMAgentOptions(
         name="TechAgent",
         description="You are a tech agent. You are responsible for answering questions about tech. You are only allowed to answer questions about tech. You are not allowed to answer questions about anything else.",
-        model_id="anthropic.claude-3-haiku-20240307-v1:0",
+        model_id="global.anthropic.claude-haiku-4-5-20251001-v1:0",
     )
 )
 
 sales_agent = BedrockLLMAgent(BedrockLLMAgentOptions(
     name="SalesAgent",
     description="You are a sales agent. You are responsible for answering questions about sales. You are only allowed to answer questions about sales. You are not allowed to answer questions about anything else.",
-    model_id="anthropic.claude-3-haiku-20240307-v1:0",
+    model_id="global.anthropic.claude-haiku-4-5-20251001-v1:0",
 ))
 
 claim_agent = AmazonBedrockAgent(AmazonBedrockAgentOptions(
@@ -97,7 +97,7 @@ claim_agent = AmazonBedrockAgent(AmazonBedrockAgentOptions(
 weather_agent = BedrockLLMAgent(BedrockLLMAgentOptions(
         name="WeatherAgent",
         streaming=True,
-        model_id="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+        model_id="us.anthropic.claude-haiku-4-5-20251001-v1:0",
         description="Specialized agent for giving weather forecast condition from a city.",
         tool_config={
             'tool':weather_tool_description,
@@ -123,13 +123,13 @@ weather_agent.set_system_prompt(weather_tool_prompt)
 health_agent = BedrockLLMAgent(BedrockLLMAgentOptions(
     name="HealthAgent",
     description="You are a health agent. You are responsible for answering questions about health. You are only allowed to answer questions about health. You are not allowed to answer questions about anything else.",
-    model_id="anthropic.claude-3-haiku-20240307-v1:0",
+    model_id="global.anthropic.claude-haiku-4-5-20251001-v1:0",
 ))
 
 travel_agent = BedrockLLMAgent(BedrockLLMAgentOptions(
     name="TravelAgent",
     description="You are a travel assistant agent. You are responsible for answering questions about travel, activities, sight seesing about a city and surrounding",
-    model_id="anthropic.claude-3-haiku-20240307-v1:0",
+    model_id="global.anthropic.claude-haiku-4-5-20251001-v1:0",
 ))
 
 airlines_agent = LexBotAgent(LexBotAgentOptions(name='AirlinesBot',
@@ -161,7 +161,7 @@ if _ANTHROPIC_AVAILABLE:
 else:
     lead_agent = BedrockLLMAgent(BedrockLLMAgentOptions(
         name="SupervisorAgent",
-        model_id="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+        model_id="us.anthropic.claude-haiku-4-5-20251001-v1:0",
         streaming=True,
         inference_config={
             "temperature":1.0,

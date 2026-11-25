@@ -54,9 +54,9 @@ streamlit run main-app.py
 **Prerequisite**: AWS Account with Amazon Bedrock access (Claude models enabled)
 
 Transform your movie ideas into detailed scripts and cast lists! Our AI agents collaborate:
-- **ScriptWriter** ([BedrockLLMAgent](https://2fastlabs.github.io/agent-squad/agents/built-in/bedrock-llm-agent) with Claude 3 Sonnet): Creates compelling story outlines
-- **CastingDirector** ([BedrockLLMAgent](https://2fastlabs.github.io/agent-squad/agents/built-in/bedrock-llm-agent) with Claude 3 Haiku): Researches and suggests perfect casting choices
-- **MovieProducer** ([BedrockLLMAgent](https://2fastlabs.github.io/agent-squad/agents/built-in/bedrock-llm-agent) with Claude 3.5 Sonnet): Coordinates the entire creative process
+- **ScriptWriter** ([BedrockLLMAgent](https://2fastlabs.github.io/agent-squad/agents/built-in/bedrock-llm-agent) with Haiku 4.5): Creates compelling story outlines
+- **CastingDirector** ([BedrockLLMAgent](https://2fastlabs.github.io/agent-squad/agents/built-in/bedrock-llm-agent) with Haiku 4.5): Researches and suggests perfect casting choices
+- **MovieProducer** ([BedrockLLMAgent](https://2fastlabs.github.io/agent-squad/agents/built-in/bedrock-llm-agent) with Haiku 4.5): Coordinates the entire creative process
 - All coordinated by a  [**Custom Agent**](https://2fastlabs.github.io/agent-squad/agents/custom-agents)  as Supervisor Agent
 
 ### ✈️ AI Travel Planner

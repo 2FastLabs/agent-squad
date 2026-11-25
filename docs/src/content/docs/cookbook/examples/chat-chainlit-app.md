@@ -8,7 +8,7 @@ This example demonstrates how to build a chat application using Chainlit and the
 ## Key Features
 - Streaming responses using Chainlit's real-time capabilities
 - Integration with multiple agent types (Bedrock and Ollama)
-- Custom classifier configuration using Claude 3 Haiku
+- Custom classifier configuration using Haiku 4.5
 - Session management for user interactions
 - Complete chat history handling
 
@@ -35,8 +35,8 @@ chainlit run app.py -w
    - Streaming response handling
 
 2. **Agent Configuration** (`agents.py`)
-   - Tech Agent: Uses Claude 3 Sonnet via Bedrock
-   - Travel Agent: Uses Claude 3 Sonnet via Bedrock
+   - Tech Agent: Uses Haiku 4.5 via Bedrock
+   - Travel Agent: Uses Haiku 4.5 via Bedrock
    - Health Agent: Uses Ollama with Llama 3.1
 
 3. **Custom Integration** (`ollamaAgent.py`)

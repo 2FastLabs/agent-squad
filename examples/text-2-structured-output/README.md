@@ -23,7 +23,7 @@ This project implements a multi-agent orchestration system designed to handle va
 - **Returns & Terms Assistant**: Handles inquiries about return policies, refunds, and terms & conditions
 - **Greeting Agent**: Welcomes users and helps them navigate the available services
 
-The system uses AWS Bedrock with Claude 3 Sonnet as the underlying language model and implements streaming responses for real-time interaction.
+The system uses AWS Bedrock with Haiku 4.5 as the underlying language model and implements streaming responses for real-time interaction.
 
 ## Prerequisites
 

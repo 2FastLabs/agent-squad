@@ -172,7 +172,7 @@ export const orderManagementAgent = new BedrockLLMAgent({
   streaming: false,
   description:
     "Handles order-related inquiries including order status, shipment tracking, returns, and refunds. Uses order database and shipment tracking tools.",
-  modelId: "anthropic.claude-3-sonnet-20240229-v1:0",
+  modelId: "global.anthropic.claude-haiku-4-5-20251001-v1:0",
   toolConfig: {
     useToolHandler: orderManagementToolHandler,
     tool: orderManagementToolConfig,
@@ -201,7 +201,7 @@ export const productInfoAgent = new BedrockLLMAgent({
   streaming: false,
   description:
     "Provides detailed product information, answers questions about specifications, compatibility, and availability.",
-  modelId: "anthropic.claude-3-haiku-20240307-v1:0",
+  modelId: "global.anthropic.claude-haiku-4-5-20251001-v1:0",
   retriever: productInfoRetriever,
   saveChat: false,
 } as BedrockLLMAgentOptions);

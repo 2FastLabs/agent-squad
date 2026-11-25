@@ -6,7 +6,7 @@ import {
 } from "@aws-sdk/client-bedrock-runtime";
 import { Agent, AgentCallbacks, AgentOptions } from "./agent";
 import {
-  BEDROCK_MODEL_ID_CLAUDE_3_HAIKU,
+  BEDROCK_MODEL_ID_CLAUDE_HAIKU_4_5,
   ConversationMessage,
   ParticipantRole,
   TemplateVariables,
@@ -121,7 +121,7 @@ export class BedrockLLMAgent extends Agent {
     addUserAgentMiddleware(this.client, "bedrock-llm-agent");
 
     // Initialize the modelId
-    this.modelId = options.modelId ?? BEDROCK_MODEL_ID_CLAUDE_3_HAIKU;
+    this.modelId = options.modelId ?? BEDROCK_MODEL_ID_CLAUDE_HAIKU_4_5;
 
     this.streaming = options.streaming ?? false;
 
@@ -309,9 +309,9 @@ export class BedrockLLMAgent extends Agent {
         system: [{ text: systemPrompt }],
         inferenceConfig: {
           maxTokens: this.inferenceConfig.maxTokens,
-          temperature: this.inferenceConfig.temperature,
           stopSequences: this.inferenceConfig.stopSequences,
-          ...(this.reasoningConfig?.thinking.type !== "enable" && {
+          ...(this.reasoningConfig?.thinking.type !== "enabled" && {
+            temperature: this.inferenceConfig.temperature,
             topP: this.inferenceConfig.topP,
           }),
         },

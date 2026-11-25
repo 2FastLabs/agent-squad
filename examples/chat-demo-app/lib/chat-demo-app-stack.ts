@@ -149,6 +149,8 @@ export class ChatDemoStack extends cdk.Stack {
         ],
         resources: [
           `arn:aws:bedrock:${cdk.Aws.REGION}::foundation-model/*`,
+          `arn:${cdk.Aws.PARTITION}:bedrock:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:inference-profile/global.anthropic.claude-haiku-4-5-20251001-v1:0`,
+          `arn:${cdk.Aws.PARTITION}:bedrock:::foundation-model/anthropic.claude-haiku-4-5-20251001-v1:0`,
         ],
       })
     );

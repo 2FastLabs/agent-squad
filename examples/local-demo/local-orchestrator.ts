@@ -51,7 +51,7 @@ function createOrchestrator(): AgentSquad {
   // Add weahter agent with tool
   const weatherAgent = new BedrockLLMAgent({
     name: "Weather Agent",
-    modelId:"us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+    modelId:"us.anthropic.claude-haiku-4-5-20251001-v1:0",
     description:
       "Specialized agent for giving weather condition from a city.",
     streaming: false,

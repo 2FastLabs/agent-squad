@@ -7,7 +7,7 @@ from agent_squad.agents import Agent, AgentOptions, AgentStreamResponse
 from agent_squad.types import (
     ConversationMessage,
     ParticipantRole,
-    BEDROCK_MODEL_ID_CLAUDE_3_HAIKU,
+    BEDROCK_MODEL_ID_CLAUDE_HAIKU_4_5,
     TemplateVariables,
     AgentProviderType,
 )
@@ -48,14 +48,15 @@ class BedrockLLMAgent(Agent):
 
         user_agent.register_feature_to_client(self.client, feature="bedrock-llm-agent")
 
-        self.model_id: str = options.model_id or BEDROCK_MODEL_ID_CLAUDE_3_HAIKU
+        self.model_id: str = options.model_id or BEDROCK_MODEL_ID_CLAUDE_HAIKU_4_5
         self.streaming: bool = options.streaming
         self.inference_config: dict[str, Any]
 
+        # topP isn't set by default: Claude Haiku 4.5 and newer reject
+        # temperature and topP in the same request.
         default_inference_config = {
             "maxTokens": 1000,
             "temperature": 0.0,
-            "topP": 0.9,
             "stopSequences": [],
         }
 
@@ -64,14 +65,18 @@ class BedrockLLMAgent(Agent):
                 **default_inference_config,
                 **options.inference_config,
             }
+            # A caller who sets topP but no temperature wants topP sampling, so
+            # the default temperature isn't sent next to it.
+            if options.inference_config.get("topP") is not None and "temperature" not in options.inference_config:
+                self.inference_config.pop("temperature", None)
         else:
             self.inference_config = default_inference_config
 
         self.additional_model_request_fields: Optional[dict[str, Any]] = options.additional_model_request_fields or {}
-        # if thinking is enabled, unset top_p
+        # Extended thinking doesn't support sampling parameter overrides.
         if self.additional_model_request_fields.get("thinking", {}).get("type") == "enabled":
-            Logger.warn("Removing topP for thinking mode")
-            del self.inference_config["topP"]
+            self.inference_config.pop("temperature", None)
+            self.inference_config.pop("topP", None)
 
         self.guardrail_config: Optional[dict[str, str]] = options.guardrail_config or {}
 

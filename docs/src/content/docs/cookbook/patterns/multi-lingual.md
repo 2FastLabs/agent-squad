@@ -30,7 +30,7 @@ By integrating language-specific agents, the Agent Squad can provide multi-lingu
 orchestrator.addAgent(
   new BedrockLLMAgent({
     name: "Text Summarization Agent for French Language",
-    modelId: "anthropic.claude-3-haiku-20240307-v1:0",
+    modelId: "global.anthropic.claude-haiku-4-5-20251001-v1:0",
     description: "This is a very simple text summarization agent for french language.",
     streaming: true,
     inferenceConfig: {

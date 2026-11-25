@@ -14,19 +14,21 @@ The Bedrock Classifier is the default classifier used in the Agent Squad. It lev
 
 ### Default Model
 
-The classifier uses Claude 3.5 Sonnet as its default model:
+The classifier uses Claude Haiku 4.5, through the global cross-Region inference profile, as its default model:
 ```typescript
-BEDROCK_MODEL_ID_CLAUDE_3_5_SONNET = "anthropic.claude-3-5-sonnet-20240620-v1:0"
+BEDROCK_MODEL_ID_CLAUDE_HAIKU_4_5 = "global.anthropic.claude-haiku-4-5-20251001-v1:0"
 ```
+
+The global profile can route requests worldwide. It requires [inference profile permissions](https://docs.aws.amazon.com/bedrock/latest/userguide/global-cross-region-inference.html) and a supported source region. For geography-specific routing or GovCloud, pass a supported geographic profile and verify the destinations with `GetInferenceProfile`. See [model availability](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-haiku-4-5.html).
+
+With the default model, specify either `temperature` or `topP`, not both. In Python, `topP` omits the default temperature; `top_p` and `stop_sequences` remain accepted aliases for `topP` and `stopSequences`. An explicit `None` omits a sampling parameter.
 
 ### Model Support for Tool Choice
 
-The BedrockClassifier's toolChoice configuration for structured outputs is only available with specific models in Amazon Bedrock. As of January 2025, the following models support tool use:
+The BedrockClassifier's toolChoice configuration for structured outputs is only available with specific models in Amazon Bedrock. The following models support tool use:
 
 - **Anthropic Models**:
-  - Claude 3 models (all variants except Haiku)
-  - Claude 3.5 Sonnet (`anthropic.claude-3-5-sonnet-20240620-v1:0`)
-  - Claude 3.5 Sonnet v2
+  - Haiku 4.5 (`global.anthropic.claude-haiku-4-5-20251001-v1:0`)
 
 - **AI21 Labs Models**:
   - Jamba 1.5 Large
@@ -244,12 +246,11 @@ You can customize the BedrockClassifier by creating an instance with specific op
     import { BedrockClassifier, AgentSquad } from "agent-squad";
 
     const customBedrockClassifier = new BedrockClassifier({
-      modelId: 'anthropic.claude-3-sonnet-20240229-v1:0',
+      modelId: 'global.anthropic.claude-haiku-4-5-20251001-v1:0',
       region: 'us-west-2',
       inferenceConfig: {
         maxTokens: 500,
         temperature: 0.7,
-        topP: 0.9
       }
     });
 
@@ -262,12 +263,11 @@ You can customize the BedrockClassifier by creating an instance with specific op
     from agent_squad.classifiers import BedrockClassifier, BedrockClassifierOptions
 
     custom_bedrock_classifier = BedrockClassifier(BedrockClassifierOptions(
-        model_id='anthropic.claude-3-sonnet-20240229-v1:0',
+        model_id='global.anthropic.claude-haiku-4-5-20251001-v1:0',
         region='us-west-2',
         inference_config={
             'maxTokens': 500,
             'temperature': 0.7,
-            'topP': 0.9
         }
     ))
 
@@ -278,7 +278,7 @@ You can customize the BedrockClassifier by creating an instance with specific op
 
 The BedrockClassifier accepts the following configuration options:
 
-- `model_id` (optional): The ID of the Bedrock model to use. Defaults to Claude 3.5 Sonnet.
+- `model_id` (optional): The ID of the Bedrock model to use. Defaults to Claude Haiku 4.5 (`BEDROCK_MODEL_ID_CLAUDE_HAIKU_4_5`).
 - `region` (optional): The AWS region to use. If not provided, it will use the `REGION` environment variable.
 - `inference_config` (optional): A dictionary containing inference configuration parameters:
   - `maxTokens` (optional): The maximum number of tokens to generate.

@@ -1,5 +1,5 @@
 from typing import List, Dict, Optional, Any
-from agent_squad.types import ConversationMessage, ParticipantRole, BEDROCK_MODEL_ID_CLAUDE_3_HAIKU
+from agent_squad.types import ConversationMessage, ParticipantRole, BEDROCK_MODEL_ID_CLAUDE_HAIKU_4_5
 from agent_squad.utils import conversation_to_dict, Logger
 from dataclasses import dataclass
 from .agent import Agent, AgentOptions
@@ -19,17 +19,17 @@ class BedrockTranslatorAgent(Agent):
         super().__init__(options)
         self.source_language = options.source_language
         self.target_language = options.target_language or 'English'
-        self.model_id = options.model_id or BEDROCK_MODEL_ID_CLAUDE_3_HAIKU
+        self.model_id = options.model_id or BEDROCK_MODEL_ID_CLAUDE_HAIKU_4_5
         if options.client:
             self.client = options.client
         else:
             self.client = boto3.client('bedrock-runtime', region_name=options.region)
 
-        # Default inference configuration
+        # Default inference configuration. topP isn't set by default: Claude
+        # Haiku 4.5 and newer reject temperature and topP in the same request.
         self.inference_config: Dict[str, Any] = options.inference_config or {
             'maxTokens': 1000,
             'temperature': 0.0,
-            'topP': 0.9,
             'stopSequences': []
         }
 

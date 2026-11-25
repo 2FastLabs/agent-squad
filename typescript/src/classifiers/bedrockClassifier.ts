@@ -1,5 +1,5 @@
 import {
-  BEDROCK_MODEL_ID_CLAUDE_3_5_SONNET,
+  BEDROCK_MODEL_ID_CLAUDE_HAIKU_4_5,
   ConversationMessage,
   ParticipantRole,
 } from "../types";
@@ -7,6 +7,7 @@ import {
   BedrockRuntimeClient,
   ContentBlock,
   ConverseCommand,
+  ConverseCommandInput,
   ToolConfiguration
 } from "@aws-sdk/client-bedrock-runtime";
 
@@ -101,7 +102,7 @@ export class BedrockClassifier extends Classifier{
     this.region = options.region || process.env.REGION;
     this.client = new BedrockRuntimeClient({region:this.region});
     addUserAgentMiddleware(this.client, "bedrock-classifier");
-    this.modelId = options.modelId || BEDROCK_MODEL_ID_CLAUDE_3_5_SONNET;
+    this.modelId = options.modelId || BEDROCK_MODEL_ID_CLAUDE_HAIKU_4_5;
     // Initialize inferenceConfig only if it's provided in options
     this.inferenceConfig = {
       maxTokens: options.inferenceConfig?.maxTokens,
@@ -147,13 +148,13 @@ export class BedrockClassifier extends Classifier{
     }
 
     // Prepare the command to converse with the Bedrock API
-    const converseCmd = {
+    const converseCmd: ConverseCommandInput = {
       modelId: this.modelId,
       messages: [userMessage],
       system: [{ text: this.systemPrompt }],
       toolConfig: toolConfig,
-      inferenceConfiguration: {
-        maximumTokens: this.inferenceConfig.maxTokens,
+      inferenceConfig: {
+        maxTokens: this.inferenceConfig.maxTokens,
         temperature: this.inferenceConfig.temperature,
         topP: this.inferenceConfig.topP,
         stopSequences: this.inferenceConfig.stopSequences,

@@ -52,7 +52,7 @@ const knowledgeBases: KnowledgeBase[] = [
 const bedrickInlineAgent = new BedrockInlineAgent({
   name: "Inline Agent Creator for Agents for Amazon Bedrock",
   region: 'us-east-1',
-  modelId: "anthropic.claude-3-haiku-20240307-v1:0",
+  modelId: "global.anthropic.claude-haiku-4-5-20251001-v1:0",
   description: "Specialized in creating Agent to solve customer request dynamically. You are provided with a list of Action groups and Knowledge bases which can help you in answering customer request",
   actionGroupsList: actionGroupsList,
   knowledgeBases: knowledgeBases,

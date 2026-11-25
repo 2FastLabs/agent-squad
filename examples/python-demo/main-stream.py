@@ -169,7 +169,7 @@ if __name__ == "__main__":
         description="Specializes in technology areas including software development, hardware, AI, \
             cybersecurity, blockchain, cloud computing, emerging tech innovations, and pricing/costs \
             related to technology products and services.",
-        model_id="anthropic.claude-3-sonnet-20240229-v1:0",
+        model_id="global.anthropic.claude-haiku-4-5-20251001-v1:0",
         # callbacks=LLMAgentCallbacks()
     ))
     orchestrator.add_agent(tech_agent)
@@ -184,7 +184,7 @@ if __name__ == "__main__":
             "temperature":1.0
         },
         description="Specializes in health and well being.",
-        model_id="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+        model_id="us.anthropic.claude-haiku-4-5-20251001-v1:0",
         additional_model_request_fields={
             "thinking": {
                 "type": "enabled",
@@ -250,7 +250,7 @@ if __name__ == "__main__":
     weather_agent = BedrockLLMAgent(BedrockLLMAgentOptions(
         name="Weather Agent",
         streaming=True,
-        model_id="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+        model_id="us.anthropic.claude-haiku-4-5-20251001-v1:0",
         description="Specialized agent for giving weather condition from a city.",
         tool_config={
             'tool': [tool.to_bedrock_format() for tool in weather_tool.weather_tools.tools],

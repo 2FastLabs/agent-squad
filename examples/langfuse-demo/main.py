@@ -286,7 +286,7 @@ weather_tools:AgentTools = AgentTools(tools=[AgentTool(name="Weather_Tool",
 def run_main():
 
     classifier = BedrockClassifier(BedrockClassifierOptions(
-        model_id="anthropic.claude-3-haiku-20240307-v1:0",
+        model_id="global.anthropic.claude-haiku-4-5-20251001-v1:0",
         callbacks=BedrockClassifierCallbacks()
     ))
     # Initialize the orchestrator with some options
@@ -309,7 +309,7 @@ def run_main():
         description="Specializes in technology areas including software development, hardware, AI, \
             cybersecurity, blockchain, cloud computing, emerging tech innovations, and pricing/costs \
             related to technology products and services.",
-        model_id="anthropic.claude-3-sonnet-20240229-v1:0",
+        model_id="global.anthropic.claude-haiku-4-5-20251001-v1:0",
         callbacks=LLMAgentCallbacks()
     ))
     orchestrator.add_agent(tech_agent)
@@ -319,7 +319,7 @@ def run_main():
         name="Health Agent",
         streaming=False,
         description="Specializes in health and well being.",
-        model_id="anthropic.claude-3-sonnet-20240229-v1:0",
+        model_id="global.anthropic.claude-haiku-4-5-20251001-v1:0",
         callbacks=LLMAgentCallbacks(),
     ))
     orchestrator.add_agent(health_agent)

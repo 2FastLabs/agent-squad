@@ -43,7 +43,7 @@ knowledge_bases = [
 bedrock_inline_agent = BedrockInlineAgent(BedrockInlineAgentOptions(
     name="Inline Agent Creator for Agents for Amazon Bedrock",
     region='us-east-1',
-    model_id="anthropic.claude-3-haiku-20240307-v1:0",
+    model_id="global.anthropic.claude-haiku-4-5-20251001-v1:0",
     description="Specalized in creating Agent to solve customer request dynamically. You are provided with a list of Action groups and Knowledge bases which can help you in answering customer request",
     action_groups_list=action_groups_list,
     bedrock_agent_client=boto3.client('bedrock-agent-runtime', region_name='us-east-1'),

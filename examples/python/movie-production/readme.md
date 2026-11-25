@@ -1,5 +1,5 @@
 ## 🎬 AI Movie Production Agent
-This Streamlit app is an AI-powered movie production assistant that helps bring your movie ideas to life using Claude 3 on Amazon Bedrock. It automates the process of script writing and casting, allowing you to create compelling movie concepts with ease.
+This Streamlit app is an AI-powered movie production assistant that helps bring your movie ideas to life using Haiku 4.5 on Amazon Bedrock. It automates the process of script writing and casting, allowing you to create compelling movie concepts with ease.
 
 ### Streamlit App
 Here is a screenshot of the streamlit app. You can describe your movie, select a movie genre, audience and duration and hit `Develop Movie Concept`

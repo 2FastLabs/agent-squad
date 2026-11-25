@@ -62,7 +62,7 @@ tech_agent = BedrockLLMAgent(BedrockLLMAgentOptions(
   description="Specializes in technology areas including software development, hardware, AI, \
   cybersecurity, blockchain, cloud computing, emerging tech innovations, and pricing/costs \
   related to technology products and services.",
-  model_id="anthropic.claude-3-sonnet-20240229-v1:0",
+  model_id="global.anthropic.claude-haiku-4-5-20251001-v1:0",
   callbacks=BedrockLLMAgentCallbacks()
 ))
 orchestrator.add_agent(tech_agent)
@@ -98,7 +98,7 @@ python quickstart.py
 
 ## Implementation Notes
 - Implements streaming responses by default
-- Uses default Bedrock Classifier with `anthropic.claude-3-5-sonnet-20240620-v1:0`
+- Uses default Bedrock Classifier with `global.anthropic.claude-haiku-4-5-20251001-v1:0`
 - Includes interactive command-line interface
 - Handles session management with UUID generation
 
