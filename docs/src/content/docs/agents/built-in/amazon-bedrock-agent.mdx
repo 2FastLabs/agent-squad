@@ -336,6 +336,14 @@ Each entry in `citations` mirrors the `Citation` object returned by the [Amazon 
 | `retrievedReferences[].location` | object | Where the source lives — `s3Location.uri`, `webLocation.url`, etc. |
 | `retrievedReferences[].metadata` | object | Any custom metadata attached to the source document |
 
+## Generated files (Python)
+
+When Bedrock code interpretation generates files, Python's `AmazonBedrockAgent` returns them on
+`ConversationMessage.files`. Read it from `response.output` for a non-streaming response or
+from the final stream item's `final_message`. Each entry has `filename`, `content_type`, and
+`data` (raw bytes); values Bedrock omits are `None`. If no files are generated, `files` is `None`.
+Consume files from the response rather than relying on chat history to store them.
+
 ---
 
 By leveraging the `AmazonBedrockAgent`, you can easily integrate **pre-built Amazon Bedrock agents** into your Agent Squad.

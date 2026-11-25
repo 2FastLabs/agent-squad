@@ -41,15 +41,30 @@ class ParticipantRole(Enum):
     USER = "user"
 
 
+class GeneratedFile(TypedDict):
+    filename: str | None
+    content_type: str | None
+    data: bytes | None
+
+
 class ConversationMessage:
     role: ParticipantRole
     content: list[Any]
     citations: Optional[list[Any]]
+    files: Optional[list[GeneratedFile]]
 
-    def __init__(self, role: ParticipantRole, content: Optional[list[Any]] = None, citations: Optional[list[Any]] = None):
+    def __init__(
+        self,
+        role: ParticipantRole,
+        content: Optional[list[Any]] = None,
+        citations: Optional[list[Any]] = None,
+        *,
+        files: Optional[list[GeneratedFile]] = None,
+    ):
         self.role = role
         self.content = content
         self.citations = citations
+        self.files = files
 
 class TimestampedMessage(ConversationMessage):
     def __init__(self,

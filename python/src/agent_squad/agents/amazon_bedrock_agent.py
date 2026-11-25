@@ -6,15 +6,23 @@ offering a flexible and extensible way to process conversational interactions us
 AWS Bedrock's agent runtime capabilities.
 """
 
+from collections.abc import AsyncIterator
 from typing import Any, Optional
 from dataclasses import dataclass
 import os
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 from agent_squad.agents import Agent, AgentOptions, AgentStreamResponse, AgentCallbacks
-from agent_squad.types import ConversationMessage, ParticipantRole
+from agent_squad.types import ConversationMessage, GeneratedFile, ParticipantRole
 from agent_squad.utils import Logger
 from agent_squad.shared import user_agent
+
+
+def _parse_generated_files(file_event: dict[str, Any]) -> list[GeneratedFile]:
+    return [
+        {"filename": file.get("name"), "content_type": file.get("type"), "data": file.get("bytes")}
+        for file in file_event.get("files", [])
+    ]
 
 
 @dataclass
@@ -97,7 +105,7 @@ class AmazonBedrockAgent(Agent):
         session_id: str,
         chat_history: list[ConversationMessage],
         additional_params: dict[str, str] | None = None
-    ) -> ConversationMessage:
+    ) -> ConversationMessage | AsyncIterator[AgentStreamResponse]:
         """
         Process a user request through the Bedrock agent runtime.
 
@@ -112,7 +120,7 @@ class AmazonBedrockAgent(Agent):
         :param session_id: Unique conversation session identifier
         :param chat_history: Previous conversation messages
         :param additional_params: Optional supplementary parameters
-        :return: Agent's response as a conversation message
+        :return: A conversation message, or a stream ending with the final message
         """
         # Initialize session state, defaulting to empty if not provided
         session_state = {}
@@ -138,6 +146,7 @@ class AmazonBedrockAgent(Agent):
 
             completion = ""
             citations: list = []
+            files: list[GeneratedFile] = []
 
             if self.streaming:
                 async def generate_chunks():
@@ -151,13 +160,16 @@ class AmazonBedrockAgent(Agent):
                             if 'attribution' in chunk:
                                 citations.extend(chunk['attribution'].get('citations', []))
                             yield AgentStreamResponse(text=decoded_response)
+                        elif 'files' in event:
+                            files.extend(_parse_generated_files(event['files']))
                         elif 'trace' in event and self.enableTrace:
                             Logger.info(f"Received event: {event}")
                     yield AgentStreamResponse(
                         final_message=ConversationMessage(
                             role=ParticipantRole.ASSISTANT.value,
                             content=[{'text': completion}],
-                            citations=citations if citations else None))
+                            citations=citations if citations else None,
+                            files=files or None))
                 return generate_chunks()
             else:
                 for event in response['completion']:
@@ -168,13 +180,16 @@ class AmazonBedrockAgent(Agent):
                         completion += decoded_response
                         if 'attribution' in chunk:
                             citations.extend(chunk['attribution'].get('citations', []))
+                    elif 'files' in event:
+                        files.extend(_parse_generated_files(event['files']))
                     elif 'trace' in event and self.enableTrace:
                         Logger.info(f"Received event: {event}")
 
                 return ConversationMessage(
                     role=ParticipantRole.ASSISTANT.value,
                     content=[{"text": completion}],
-                    citations=citations if citations else None
+                    citations=citations if citations else None,
+                    files=files or None
                 )
         except (BotoCoreError, ClientError) as error:
             # Comprehensive error logging and propagation

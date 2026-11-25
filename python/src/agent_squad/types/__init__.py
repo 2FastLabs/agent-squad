@@ -1,6 +1,7 @@
 """Module for importing types."""
 from .types import (
     ConversationMessage,
+    GeneratedFile,
     ParticipantRole,
     TimestampedMessage,
     RequestMetadata,
@@ -19,6 +20,7 @@ from .types import (
 
 __all__ = [
     'ConversationMessage',
+    'GeneratedFile',
     'ParticipantRole',
     'TimestampedMessage',
     'RequestMetadata',
