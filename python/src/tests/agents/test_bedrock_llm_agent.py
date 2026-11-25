@@ -733,7 +733,7 @@ def test_build_conversation_command(bedrock_llm_agent):
     assert result["system"][0]["text"] == "Test system prompt"
     assert "inferenceConfig" in result
     assert result["inferenceConfig"]["maxTokens"] == bedrock_llm_agent.inference_config["maxTokens"]
-    assert result["inferenceConfig"]["temperature"] == bedrock_llm_agent.inference_config["temperature"]
+    assert "temperature" not in result["inferenceConfig"]
     
     # Check for topP only if it exists in the inference_config
     # (it's removed when reasoning_config with thinking is enabled)

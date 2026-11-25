@@ -38,13 +38,15 @@ class BedrockClassifier(Classifier):
 
         self.model_id = options.model_id or BEDROCK_MODEL_ID_CLAUDE_HAIKU_4_5
         self.system_prompt: str
-        # top_p isn't set by default: Claude Haiku 4.5 and newer reject
-        # temperature and top_p in the same request.
+        # Haiku 4.5 accepts temperature or topP, so a topP override must not
+        # inherit the default temperature. Keep the legacy snake_case aliases.
+        top_p = options.inference_config.get('topP', options.inference_config.get('top_p'))
         self.inference_config = {
             'maxTokens': options.inference_config.get('maxTokens', 1000),
-            'temperature':  options.inference_config.get('temperature', 0.0),
-            'topP': options.inference_config.get('top_p'),
-            'stopSequences': options.inference_config.get('stop_sequences', [])
+            'temperature': options.inference_config.get('temperature', None if top_p is not None else 0.0),
+            'topP': top_p,
+            'stopSequences': options.inference_config.get(
+                'stopSequences', options.inference_config.get('stop_sequences', []))
         }
         self.tools = [
             {

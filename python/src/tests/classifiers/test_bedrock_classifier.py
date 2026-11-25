@@ -98,6 +98,7 @@ async def test_sampling_defaults_are_sent():
 async def test_top_p_is_sent_when_set():
     config = await _sent_inference_config({'top_p': 0.9})
     assert config['topP'] == 0.9
+    assert 'temperature' not in config
 
 
 @pytest.mark.asyncio

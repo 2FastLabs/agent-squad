@@ -1,4 +1,5 @@
 export { BedrockLLMAgent, BedrockLLMAgentOptions } from './agents/bedrockLLMAgent';
+export { BedrockTranslatorAgent, BedrockTranslatorAgentOptions } from './agents/bedrockTranslatorAgent';
 export { AmazonBedrockAgent, AmazonBedrockAgentOptions } from './agents/amazonBedrockAgent';
 export { BedrockInlineAgent, BedrockInlineAgentOptions } from './agents/bedrockInlineAgent';
 export { LambdaAgent, LambdaAgentOptions } from './agents/lambdaAgent';
@@ -48,6 +49,7 @@ export { AgentSquad } from "./orchestrator";
 export { AgentOverlapAnalyzer, AnalysisResult } from "./agentOverlapAnalyzer";
 
 export { ConversationMessage, ParticipantRole } from "./types"
+export { BEDROCK_MODEL_ID_CLAUDE_HAIKU_4_5 } from './types';
 export { AgentTools, AgentTool, ToolResult } from "./utils/tool"
 export type { ToolFormatter } from "./agents/groundedAgent"
 export { UIPolicy } from "./utils/ui"

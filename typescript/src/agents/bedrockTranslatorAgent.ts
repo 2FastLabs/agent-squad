@@ -1,9 +1,9 @@
 import { Agent, AgentOptions } from "./agent";
 import { ConversationMessage, ParticipantRole, BEDROCK_MODEL_ID_CLAUDE_HAIKU_4_5 } from "../types";
-import { BedrockRuntimeClient, ConverseCommand, ContentBlock } from "@aws-sdk/client-bedrock-runtime";
+import { BedrockRuntimeClient, ConverseCommand, ConverseCommandInput, ContentBlock } from "@aws-sdk/client-bedrock-runtime";
 import { Logger } from "../utils/logger";
 
-interface BedrockTranslatorAgentOptions extends AgentOptions {
+export interface BedrockTranslatorAgentOptions extends AgentOptions {
   region?: string;
   sourceLanguage?: string;
   targetLanguage?: string;
@@ -108,7 +108,7 @@ export class BedrockTranslatorAgent extends Agent {
     }
     systemPrompt += `. Only provide the translation using the Translate tool.`;
 
-    const converseCmd = {
+    const converseCmd: ConverseCommandInput = {
       modelId: this.modelId,
       messages: [userMessage],
       system: [{ text: systemPrompt }],
@@ -120,8 +120,8 @@ export class BedrockTranslatorAgent extends Agent {
           },
         },
       },
-      inferenceConfiguration: {
-        maximumTokens: this.inferenceConfig.maxTokens,
+      inferenceConfig: {
+        maxTokens: this.inferenceConfig.maxTokens,
         temperature: this.inferenceConfig.temperature,
         topP: this.inferenceConfig.topP,
         stopSequences: this.inferenceConfig.stopSequences,

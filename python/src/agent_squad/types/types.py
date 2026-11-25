@@ -6,8 +6,8 @@ import time
 # Constants
 # Claude Haiku 4.5 through the global cross-Region inference profile. The bare
 # model ID isn't supported for on-demand throughput on bedrock-runtime, so the
-# profile ID is used. Pass a geo profile (e.g. us./eu./jp.) as model_id if
-# requests must stay in one geography.
+# profile ID is used. For geographic routing, pass a supported geo profile as
+# model_id and check its destinations with GetInferenceProfile.
 BEDROCK_MODEL_ID_CLAUDE_HAIKU_4_5 = "global.anthropic.claude-haiku-4-5-20251001-v1:0"
 # Deprecated: these Claude 3.x models reached (or are reaching) end of life on
 # Amazon Bedrock. Kept so existing imports keep working.

@@ -7,6 +7,7 @@ import {
   BedrockRuntimeClient,
   ContentBlock,
   ConverseCommand,
+  ConverseCommandInput,
   ToolConfiguration
 } from "@aws-sdk/client-bedrock-runtime";
 
@@ -147,13 +148,13 @@ export class BedrockClassifier extends Classifier{
     }
 
     // Prepare the command to converse with the Bedrock API
-    const converseCmd = {
+    const converseCmd: ConverseCommandInput = {
       modelId: this.modelId,
       messages: [userMessage],
       system: [{ text: this.systemPrompt }],
       toolConfig: toolConfig,
-      inferenceConfiguration: {
-        maximumTokens: this.inferenceConfig.maxTokens,
+      inferenceConfig: {
+        maxTokens: this.inferenceConfig.maxTokens,
         temperature: this.inferenceConfig.temperature,
         topP: this.inferenceConfig.topP,
         stopSequences: this.inferenceConfig.stopSequences,

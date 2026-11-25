@@ -98,7 +98,12 @@ class BedrockInlineAgent(Agent):
             'temperature': 0.0,
             'stopSequences': []
         }
-        self.inference_config = {**default_inference_config, **(options.inference_config or {})}
+        user_inference_config = options.inference_config or {}
+        self.inference_config = {**default_inference_config, **user_inference_config}
+        # A caller who sets topP but no temperature wants topP sampling, so the
+        # default temperature isn't sent next to it.
+        if user_inference_config.get('topP') is not None and 'temperature' not in user_inference_config:
+            self.inference_config.pop('temperature', None)
 
         # Store action groups and knowledge bases
         self.action_groups_list = options.action_groups_list

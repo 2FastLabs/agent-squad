@@ -65,15 +65,18 @@ class BedrockLLMAgent(Agent):
                 **default_inference_config,
                 **options.inference_config,
             }
+            # A caller who sets topP but no temperature wants topP sampling, so
+            # the default temperature isn't sent next to it.
+            if options.inference_config.get("topP") is not None and "temperature" not in options.inference_config:
+                self.inference_config.pop("temperature", None)
         else:
             self.inference_config = default_inference_config
 
         self.additional_model_request_fields: Optional[dict[str, Any]] = options.additional_model_request_fields or {}
-        # if thinking is enabled, unset top_p
+        # Extended thinking doesn't support sampling parameter overrides.
         if self.additional_model_request_fields.get("thinking", {}).get("type") == "enabled":
-            if "topP" in self.inference_config:
-                Logger.warn("Removing topP for thinking mode")
-                del self.inference_config["topP"]
+            self.inference_config.pop("temperature", None)
+            self.inference_config.pop("topP", None)
 
         self.guardrail_config: Optional[dict[str, str]] = options.guardrail_config or {}
 
