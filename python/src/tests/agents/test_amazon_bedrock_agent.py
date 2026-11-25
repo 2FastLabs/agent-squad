@@ -45,6 +45,7 @@ async def test_process_request_success(bedrock_agent):
     assert isinstance(result, ConversationMessage)
     assert result.role == ParticipantRole.ASSISTANT.value
     assert result.content == [{"text": "Hello, world!"}]
+    assert result.files is None
 
     bedrock_agent.client.invoke_agent.assert_called_once_with(
         agentId='test_agent_id',
@@ -173,6 +174,33 @@ async def test_citations_merged_across_chunks(bedrock_agent):
 
     assert result.content == [{"text": "first second"}]
     assert result.citations == [c1, c2]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("streaming", [False, True], ids=["single", "streaming"])
+async def test_generated_files_returned_in_final_message(bedrock_agent, streaming):
+    bedrock_agent.streaming = streaming
+    citation = {"retrievedReferences": []}
+    bedrock_agent.client.invoke_agent.return_value = {
+        "completion": [
+            {"files": {"files": [{"name": "report.txt", "type": "text/plain", "bytes": b"report"}]}},
+            {"chunk": {"bytes": b"Report ready.", "attribution": {"citations": [citation]}}},
+            {"files": {"files": [{"name": "chart.png", "bytes": b"\x89PNG"}]}},
+        ]
+    }
+
+    result = await bedrock_agent.process_request("Create a report", "u1", "s1", [])
+    if streaming:
+        chunks = [chunk async for chunk in result]
+        assert [chunk.text for chunk in chunks] == ["Report ready.", ""]
+        result = chunks[-1].final_message
+
+    assert result.content == [{"text": "Report ready."}]
+    assert result.citations == [citation]
+    assert result.files == [
+        {"filename": "report.txt", "content_type": "text/plain", "data": b"report"},
+        {"filename": "chart.png", "content_type": None, "data": b"\x89PNG"},
+    ]
 
 
 def test_streaming(mock_boto3_client):
